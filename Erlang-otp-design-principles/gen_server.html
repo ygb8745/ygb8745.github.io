@@ -1,0 +1,265 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Gen_Server行为 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="Gen_Fsm行为" href="gen_fsm.html" />
+    <link rel="prev" title="概述" href="overview.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_fsm.html" title="Gen_Fsm行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="overview.html" title="概述"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="gen-server"></span><h1>Gen_Server行为<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本章要与 gen_server(3) 结合起来阅读，它详细描述了所有的接口函数和回调函数。</p>
+<div class="section" id="id2">
+<h2>客户端－服务器端原理<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>客户端－服务器端（C/S）模型的特点是：一个中央服务器和任意数量的客户端。C/S模型通常用于资源管理操作，其中一些不同的客户端要共享一个公共资源。服务器负责管理这些资源。</p>
+<img alt="_images/clientserver.gif" src="_images/clientserver.gif" />
+</div>
+<div class="section" id="id3">
+<span id="gen-server-example"></span><h2>例子<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>在<a class="reference external" href="overview.html#overview"><em>概述</em></a>中，已经有一个用普通Erlang方式写的简单服务器。这个服务器可以用 <tt class="docutils literal"><span class="pre">gen_server</span></tt> 进行重写，结果产生这个回调模块：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch3</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">gen_server</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start_link</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">alloc</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="n">free</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">,</span> <span class="n">handle_call</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="n">handle_cast</span><span class="o">/</span><span class="mi">2</span><span class="p">]).</span>
+
+<span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">start_link</span><span class="p">({</span><span class="n">local</span><span class="p">,</span> <span class="n">ch3</span><span class="p">},</span> <span class="n">ch3</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[]).</span>
+
+<span class="nf">alloc</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">call</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="n">alloc</span><span class="p">).</span>
+
+<span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">cast</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">}).</span>
+
+<span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="n">channels</span><span class="p">()}.</span>
+
+<span class="nf">handle_call</span><span class="p">(</span><span class="n">alloc</span><span class="p">,</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}</span> <span class="o">=</span> <span class="n">alloc</span><span class="p">(</span><span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">reply</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}.</span>
+
+<span class="nf">handle_cast</span><span class="p">({</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Chs2</span> <span class="o">=</span> <span class="n">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">noreply</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>在下一节中会解释这段代码。</p>
+</div>
+<div class="section" id="id4">
+<h2>启动一个Gen_Server<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>在前一节中的代码，可以通过 <tt class="docutils literal"><span class="pre">ch3:start_link()</span></tt> 来启动这个gen_server：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">start_link</span><span class="p">({</span><span class="n">local</span><span class="p">,</span> <span class="n">ch3</span><span class="p">},</span> <span class="n">ch3</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[])</span> <span class="o">=&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">}</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">start_link</span></tt> 调用了函数 <tt class="docutils literal"><span class="pre">gen_server:start_link/4</span></tt> 。这个函数产生了一个新进程一个gen_server并联接到其上。</p>
+<ul class="simple">
+<li>第一个参数 <tt class="docutils literal"><span class="pre">{local,</span> <span class="pre">ch3}</span></tt> 指定了名称。在这种情况下，gen_srever将在本地被注册为 <tt class="docutils literal"><span class="pre">ch3</span></tt> 。
+如果忽略名称，那么这个gen_server就不会被注册了，这时就必须使用其pid。名称也可以以 <tt class="docutils literal"><span class="pre">{global,</span> <span class="pre">Name}</span></tt> 的形式给出，这种情况下gen_server则会使用 <tt class="docutils literal"><span class="pre">global:register_name/2</span></tt> 来进行注册。</li>
+<li>第二个参数, <tt class="docutils literal"><span class="pre">ch3</span></tt>, 则是回调模块的名字，也就是回调函数所放的那个模块。
+在这里，接口函数（ <tt class="docutils literal"><span class="pre">start_link</span></tt>, <tt class="docutils literal"><span class="pre">alloc</span></tt> 和 <tt class="docutils literal"><span class="pre">free</span></tt> ）和回调函数（<tt class="docutils literal"><span class="pre">init</span></tt>, <tt class="docutils literal"><span class="pre">handle_call</span></tt> 和 <tt class="docutils literal"><span class="pre">handle_cast</span></tt>)。一般来说这是好的编程实践，将代表同一个进程的代码包含在同一个模块中。</li>
+<li>第三个参数，[], 这个值将被原封不动传递给回调函数 <tt class="docutils literal"><span class="pre">init</span></tt>。在这里，<tt class="docutils literal"><span class="pre">init</span></tt>无须任何输入数据将忽略这个参数。</li>
+<li>第四个参数，[]，是参数的列表。具体的参数请查看 <tt class="docutils literal"><span class="pre">gen_server(3)</span></tt> 。</li>
+</ul>
+<p>在注册名称成功后，新的gen_server进程会调用回调函数 <tt class="docutils literal"><span class="pre">ch3:init([]).</span></tt>。<tt class="docutils literal"><span class="pre">init</span></tt>返回 <tt class="docutils literal"><span class="pre">{ok,</span> <span class="pre">State}</span></tt> ，其中 <tt class="docutils literal"><span class="pre">State</span></tt> 是gen_server的内部状态。在这里，状态就是可用的频道。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+     <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="n">channels</span><span class="p">()}.</span>
+</pre></div>
+</div>
+<p>注意 <tt class="docutils literal"><span class="pre">gen_server:start_link</span></tt> 是同步的。只有等到gen_server被完全初始化并准备接受请求之后才会返回。</p>
+<p>如果gen_server是某棵监督树的一部分，即gen_server是由一个督程启动的，那么必须使用 <tt class="docutils literal"><span class="pre">gen_server:start_link</span></tt> 。还有另外一个函数 <tt class="docutils literal"><span class="pre">gen_server:start</span></tt> 用于启动一个独立的gen_server，即不是某棵监督树一部分的一个gen_server。</p>
+</div>
+<div class="section" id="call">
+<h2>同步调用——Call<a class="headerlink" href="#call" title="Permalink to this headline">¶</a></h2>
+<p>同步请求 <tt class="docutils literal"><span class="pre">alloc()</span></tt> 是使用 <tt class="docutils literal"><span class="pre">gen_server:call/2</span></tt> 实现的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">alloc</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">call</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="n">alloc</span><span class="p">).</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">ch3</span></tt> 是gen_server的名字，必须和启动时的名字一样。 <tt class="docutils literal"><span class="pre">alloc</span></tt> 是实际的请求。</p>
+<p>请求以消息的形式发送给这个gen_server。当收到了请求之后，gen_server调用 <tt class="docutils literal"><span class="pre">handle_call(Request,</span> <span class="pre">From,</span> <span class="pre">State)</span></tt> ，它应返回一个元组 <tt class="docutils literal"><span class="pre">{reply,</span> <span class="pre">Reply,</span> <span class="pre">State1}</span></tt>。<tt class="docutils literal"><span class="pre">Reply</span></tt>是需要回馈给客户端的答复，同时 <tt class="docutils literal"><span class="pre">State1</span></tt> 是gen_server的状态的新值。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">handle_call</span><span class="p">(</span><span class="n">alloc</span><span class="p">,</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+     <span class="p">{</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}</span> <span class="o">=</span> <span class="n">alloc</span><span class="p">(</span><span class="nv">Chs</span><span class="p">),</span>
+     <span class="p">{</span><span class="n">reply</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>在这里，应答是分配了的频道 <tt class="docutils literal"><span class="pre">Ch</span></tt> 然后gen_server将等待新的请求，并且现在保持了一个最新的可用频道的列表。</p>
+</div>
+<div class="section" id="cast">
+<h2>异步请求——Cast<a class="headerlink" href="#cast" title="Permalink to this headline">¶</a></h2>
+<p>异步请求 <tt class="docutils literal"><span class="pre">free(ch)</span></tt> 使用 <tt class="docutils literal"><span class="pre">gen_server:cast/2</span></tt> 实现：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">cast</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Chr</span><span class="p">}).</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">ch3</span></tt> 是gen_server的名称。 <tt class="docutils literal"><span class="pre">{free,</span> <span class="pre">Ch}</span></tt> 是实际的请求。</p>
+<p>请求被装在一个消息中发给gen_server的 <tt class="docutils literal"><span class="pre">cast</span></tt> ，这调用了 <tt class="docutils literal"><span class="pre">free</span></tt> ，然后返回了 <tt class="docutils literal"><span class="pre">ok</span></tt> 。</p>
+<p>当gen_server收到请求之后，它会调用 <tt class="docutils literal"><span class="pre">handle_cast(Request,</span> <span class="pre">Stats)</span></tt> ，会返回一个元组 <tt class="docutils literal"><span class="pre">{noreply,</span> <span class="pre">State1}</span></tt> 。 <tt class="docutils literal"><span class="pre">State1</span></tt> 是gen_server状态的新值。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">handle_cast</span><span class="p">({</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Chs2</span> <span class="o">=</span> <span class="n">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">noreply</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>在这里，新的状态便是更新过的可用频道列表 <tt class="docutils literal"><span class="pre">Chs2</span></tt> 。gen_server现在又可以接受新的请求了。</p>
+</div>
+<div class="section" id="id5">
+<h2>停止<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="id6">
+<h3>在监督树中<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h3>
+<p>若gen_server是某个监督树的一部分，则无需停止函数。它的督程会自动终止它。它的具体做法由督程中设置的 <a class="reference external" href="supervisor.html#shutdown"><em>关闭策略</em></a> 定义。</p>
+<p>如果在终止之前需要进行一些清理工作，那么关闭策略必须是一个超时值，同时gen_server必须在 <tt class="docutils literal"><span class="pre">init</span></tt> 函数中设置为捕获退出信号。当gen_server被要求关闭时，它就会调用回调函数 <tt class="docutils literal"><span class="pre">terminate(shutdown,</span> <span class="pre">State)</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">...,</span>
+    <span class="nb">process_flag</span><span class="p">(</span><span class="n">trap_exit</span><span class="p">,</span> <span class="n">true</span><span class="p">),</span>
+    <span class="p">...,</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">State</span><span class="p">}.</span>
+
+<span class="p">...</span>
+
+<span class="nf">terminate</span><span class="p">(</span><span class="n">shutdown</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">..</span><span class="n">code</span> <span class="n">for</span> <span class="n">cleaning</span> <span class="n">up</span> <span class="n">here</span><span class="p">..</span>
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id7">
+<h3>独立Gen_Server<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h3>
+<p>如果gen_server并非某个监督树的一部分，那么可以用一个停止函数，例如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">...</span>
+<span class="nf">export</span><span class="p">([</span><span class="n">stop</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">...</span>
+
+<span class="nf">stop</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">cast</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="n">stop</span><span class="p">).</span>
+<span class="p">...</span>
+
+<span class="nf">handle_cast</span><span class="p">(</span><span class="n">stop</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">stop</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="nv">State</span><span class="p">};</span>
+<span class="nf">handle_cast</span><span class="p">({</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">....</span>
+
+<span class="p">...</span>
+
+<span class="nf">terminate</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>回调函数处理 <tt class="docutils literal"><span class="pre">stop</span></tt> 请求并返回一个元组 <tt class="docutils literal"><span class="pre">{stop,</span> <span class="pre">normal,</span> <span class="pre">State1}</span></tt> ，其中 <tt class="docutils literal"><span class="pre">normal</span></tt> 表示这是一个正常的终止， <tt class="docutils literal"><span class="pre">State1</span></tt> 是gen_server状态的新值。这会引发gen_server调用 <tt class="docutils literal"><span class="pre">terminate(normal,</span> <span class="pre">State1)</span></tt> 来优雅地终止。</p>
+</div>
+</div>
+<div class="section" id="id8">
+<h2>处理其他消息<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h2>
+<p>如果要想gen_server还能处理请求之外的消息，必须实现回调函数 <tt class="docutils literal"><span class="pre">handle_info(Info,</span> <span class="pre">State)</span></tt> 来处理他们。例如，如果gen_server联结到其它进程（非督程）上并捕获退出信号，那么其它的消息就有退出消息。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">handle_info</span><span class="p">({</span><span class="n">&#39;EXIT&#39;</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">},</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">..</span><span class="n">code</span> <span class="n">to</span> <span class="n">handle</span> <span class="n">exits</span> <span class="n">here</span><span class="p">..</span>
+    <span class="p">{</span><span class="n">noreply</span><span class="p">,</span> <span class="nv">State1</span><span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">Gen_Server行为</a><ul>
+<li><a class="reference external" href="#id2">客户端－服务器端原理</a></li>
+<li><a class="reference external" href="#id3">例子</a></li>
+<li><a class="reference external" href="#id4">启动一个Gen_Server</a></li>
+<li><a class="reference external" href="#call">同步调用——Call</a></li>
+<li><a class="reference external" href="#cast">异步请求——Cast</a></li>
+<li><a class="reference external" href="#id5">停止</a><ul>
+<li><a class="reference external" href="#id6">在监督树中</a></li>
+<li><a class="reference external" href="#id7">独立Gen_Server</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#id8">处理其他消息</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="overview.html" title="previous chapter">概述</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="gen_fsm.html" title="next chapter">Gen_Fsm行为</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/gen_server.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_fsm.html" title="Gen_Fsm行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="overview.html" title="概述"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 05, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

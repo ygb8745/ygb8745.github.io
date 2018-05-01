@@ -1,0 +1,234 @@
+.. _release:
+
+.. _releases:
+
+发布
+====
+本章应该与 :manpage:`rel(4)` ， :manpage:`systools(3)` 和 :manpage:`script(4)` 。
+
+发布的概念
+----------
+当我们已经写了一个或多个应用后，我们可能想创建一个由这些应用和Erlang/OTP应用的一个子集组成的完整系统。
+
+要实现这个目的，我们通过创建一个定义在发布中要包含哪些应用的 `发布资源文件`_ 。
+
+该发布资源文件是用于生成 :ref:`启动脚本 <boot>` 和 :ref:`发布包 <pack>` 。传送并安装在另外一个站点的系统称之为 **目标系统** 。如果使用发布包创建一个目标系统将在系统原则中描述。
+
+发布资源文件
+------------
+要定义一个发布，首先要创建一个 **发布资源文件** ，简称 ``.rel`` 文件，我们在这里指定发布的名称和版本、它基于哪个ERTS版本，以及它由哪些应用组成：
+
+.. code-block:: erlang
+
+   {release, {Name,Vsn}, {erts, EVsn},
+    [{Application1, AppVsn1},
+      ...
+     {ApplicationN, AppVsnN}]}.
+
+文件必须叫做 ``Rel.rel`` ，其中 ``Rel`` 是一个唯一名字。
+
+``Name`` ， ``Vsn`` 和 ``Evsn`` 都是字符串。
+
+每个 ``Application`` （原子）和 ``AppVsn`` （字符串）是包含在发布内的应用的名称和版本。注意，基于Erlang/OTP的最小发布由应用 ``kernel`` 和 ``stdlib`` 组成，所以这两个应用必须被包含在列表中。
+
+例如：我们要创建一个来自\ :ref:`应用 <applications>`\ 一章的 ``ch_app`` 的发布。这个应用包含以下 ``.app`` 文件：
+
+.. code-block:: erlang
+
+    {application, ch_app,
+     [{description, "Channel allocator"},
+      {vsn, "1"},
+      {modules, [ch_app, ch_sup, ch3]},
+      {registered, [ch3]},
+      {applications, [kernel, stdlib, sasl]},
+      {mod, {ch_app,[]}}
+     ]}.
+   
+``.rel`` 文件还必须包含 ``kernel`` ， ``stdlib`` 和 ``sasl`` ，因为这些应用是 ``ch_app`` 必须的。我们把这个文件叫做 ``ch_rel-1.rel`` ：
+
+.. code-block:: erlang
+
+    {release,
+     {"ch_rel", "A"},
+     {erts, "5.3"},
+     [{kernel, "2.9"},
+      {stdlib, "1.12"},
+      {sasl, "1.10"},
+      {ch_app, "1"}]
+    }.
+   
+.. _boot:
+
+生成启动脚本
+------------
+在SASL模块 ``systools`` 里面有很多可以用来构建和检验发布的工具。函数读取 ``.rel`` 和 ``.app`` 文件并执行语法和依赖性检查。函数 ``systools:make_script/1,2`` 用于生成启动脚本（参见系统原则）。
+
+.. code-block:: erlang
+
+    1> systools:make_script("ch_rel-1", [local]).
+    ok
+
+这就创建了一个启动脚本，包括可阅读的版本 ``ch_rel-1.script`` 和运行时系统所使用的二进制版本 ``ch_re-1.boot`` 。 “ ``ch_rel-1`` ”是 ``.rel`` 文件去掉扩展名的名称。 ``local`` 是表示在启动脚本中用到的应用所处的目录的一个选项，没有使用 ``$ROOT/lib`` 。（ ``$ROOT`` 是安装了的发布的根目录）对于本地测试生成的启动脚本非常有用。
+
+当使用启动脚本启动Erlang/OTP时， ``.rel`` 文件中的所有应用都会被自动加载和启动：
+
+.. code-block:: erlang
+
+    % erl -boot ch_rel-1
+    Erlang (BEAM) emulator version 5.3
+
+    Eshell V5.3  (abort with ^G)
+    1> 
+    =PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+              supervisor: {local,sasl_safe_sup}
+                 started: [{pid,<0.33.0>},
+                           {name,alarm_handler},
+                           {mfa,{alarm_handler,start_link,[]}},
+                           {restart_type,permanent},
+                           {shutdown,2000},
+                           {child_type,worker}]
+
+    ...
+
+    =PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+             application: sasl
+              started_at: nonode@nohost
+
+    ...
+    =PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+             application: ch_app
+              started_at: nonode@nohost
+
+.. _pack:
+
+创建一个发布包
+--------------
+
+函数 ``systools:make_tar/1,2`` 以一个 ``.rel`` 文件作为输入，并创建一个包含了指定应用的压缩tar包，即一个\ **发布包**\ （release package）。
+
+.. code-block:: erlang
+
+    1> systools:make_script("ch_rel-1").
+    ok
+    2> systools:make_tar("ch_rel-1").
+    ok
+
+默认的发布包包含了所有的应用的 ``.app`` 文件和目标代码，并根据 :ref:`应用目录结构 <app_dir>` 建立结构，同时将二进制的启动脚本更名为 ``start.boot`` ，还包含了 ``.rel`` 文件。
+
+::
+
+    % tar tf ch_rel-1.tar
+    lib/kernel-2.9/ebin/kernel.app
+    lib/kernel-2.9/ebin/application.beam
+    ...
+    lib/stdlib-1.12/ebin/stdlib.app
+    lib/stdlib-1.12/ebin/beam_lib.beam
+    ...
+    lib/sasl-1.10/ebin/sasl.app
+    lib/sasl-1.10/ebin/sasl.beam
+    ...
+    lib/ch_app-1/ebin/ch_app.app
+    lib/ch_app-1/ebin/ch_app.beam
+    lib/ch_app-1/ebin/ch_sup.beam
+    lib/ch_app-1/ebin/ch3.beam
+    releases/A/start.boot
+    releases/ch_rel-1.rel
+       
+注意在制作发布包之前，生成新的启动脚本没有设置 ``local`` 选项。在发布包中，所有的应用目录都放在了 ``lib`` 。同时，我们不知道发布包会被安装到何处，所以我们不想在启动脚本中硬编码任何绝对路径。
+
+如果有一个 ``relup`` 文件以及/或叫做 ``sys.config`` 系统配置文件，这些文件也会被包含在发布包。参见 :ref:`发布处理 <release-handling>` :
+
+也可以设置参数让发布包包含代码和ERTS二进制文件。
+
+如何使用发布包安装首个目标系统，请参考系统原理。如果在已存在系统的安装新的发布包，请参考 :ref:`发布处理 <release-handling>` \ 。
+
+目录结构
+--------
+
+发布处理器从发布包总安装的代码的目录结构：
+
+::
+
+      $ROOT/lib/App1-AVsn1/ebin
+                        /priv
+             /App2-AVsn2/ebin
+                        /priv
+             ...
+             /AppN-AVsnN/ebin
+                        /priv
+         /erts-EVsn/bin
+         /releases/Vsn
+         /bin
+
+``lib``
+    应用程序目录。
+``erts-EVsn/bin``
+    Erlang运行时系统的可执行文件。
+``releases/Vsn``
+    ``.rel`` 文件以及启动脚本 ``start.boot`` 。
+    还有 ``relup`` 、 ``sys.config`` ，如果存在于发布包中。
+``bin``
+    顶层Erlang运行时系统可执行文件。
+
+应用不一定非得放在 ``$ROOT/lib`` 目录中。这样一来，一些安装目录可以存在并包含一个系统的不同部分。例如，前面的例子可以按如下方式扩展：
+
+::
+
+    $SECOND_ROOT/.../SApp1-SAVsn1/ebin
+                                 /priv
+                    /SApp2-SAVsn2/ebin
+                                 /priv
+                    ...
+                    /SAppN-SAVsnN/ebin
+                                 /priv
+
+    $THIRD_ROOT/TApp1-TAVsn1/ebin
+                            /priv
+               /TApp2-TAVsn2/ebin
+                            /priv
+               ...
+               /TAppN-TAVsnN/ebin
+                            /priv
+
+其中 ``$SECOND_ROOT`` 和 ``$THIRD_ROOT`` 是作为调用 ``systools:make_script/2`` 函数中的变量引入的。
+
+无盘与只读客户端
+~~~~~~~~~~~~~~~~~~~
+如果一个完整的系统包含一些无盘和只读客户端节点，那么必须在 ``$ROOT`` 目录中添加一个 ``clients`` 目录。一个只读节点的意思是一个节点的文件系统是只读的。
+
+``clients`` 目录还应该对每个支持的客户端节点有一个对应的子目录。每个客户端目录的名字必须是对应的客户端节点的名字。每个客户端目录还应包含 ``bin`` 和 ``releases`` 子目录。这些目录用于存放有关安装的发布的信息，并且给客户端指派当前的发布。终上所述， ``$ROOT`` 目录应包含以下内容：
+
+::
+
+    $ROOT/...
+        /clients/ClientName1/bin
+                            /releases/Vsn
+                /ClientName2/bin
+                            /releases/Vsn
+                ...
+                /ClientNameN/bin
+                            /releases/Vsn
+
+如果所有的客户端都运行在同一种类型的Erlang机器上，那么应该使用这种结构。如果有些客户端运行不同类型的Erlang机器，即运行在不同的操作系统上，那么 ``clients`` 目录可以被划分为每种Erlang机器一个子目录。或者，你也可以为每种类型的机器设置一个 ``$ROOT`` 。对于每种类型，还应包含为 ``$ROOT`` 指定的某些目录：
+
+::
+
+    $ROOT/...
+        /clients/Type1/lib
+                      /erts-EVsn
+                      /bin
+                      /ClientName1/bin
+                                  /releases/Vsn
+                      /ClientName2/bin
+                                  /releases/Vsn
+                      ...
+                      /ClientNameN/bin
+                                  /releases/Vsn
+                ...
+                /TypeN/lib
+                      /erts-EVsn
+                      /bin
+                      ...
+
+
+对于这个结构， ``Type1`` 型的客户端的根目录是 ``$ROOT/clients/Type1`` 。

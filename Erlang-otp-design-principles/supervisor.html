@@ -1,0 +1,314 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Supervisor行为 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="Sys与Proc_Lib" href="sys_and_proc_lib.html" />
+    <link rel="prev" title="Gen_Event行为" href="gen_event.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="sys_and_proc_lib.html" title="Sys与Proc_Lib"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="gen_event.html" title="Gen_Event行为"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="supervisor"></span><h1>Supervisor行为<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本节应该与 <em>supervisor(3)</em> 相结合阅读，其中有所有的督程行为的细节。</p>
+<div class="section" id="id2">
+<h2>监督原理<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>督程负责启动、停止和监视它的子进程。督程的基本思想是它要保持它的子进程有效，必要的时候可以重启他们。</p>
+<p>要启动和监视的子进程由一个 <a class="reference internal" href="#id6">子进程规格</a> 的列表来指定。子进程按照在这个列表中的顺序启动，并且按照相反的顺序终止。</p>
+</div>
+<div class="section" id="id3">
+<h2>例子<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>启动来自 <a class="reference external" href="gen_server.html#gen-server-example"><em>gen_server一章</em></a> 的服务器的督程的回调模块可以是：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch_sup</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">supervisor</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start_link</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+
+<span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">supervisor</span><span class="p">:</span><span class="n">start_link</span><span class="p">(</span><span class="n">ch_sup</span><span class="p">,</span> <span class="p">[]).</span>
+
+<span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{{</span><span class="n">one_for_one</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">60</span><span class="p">},</span>
+          <span class="p">[{</span><span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">ch3</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+            <span class="n">permanent</span><span class="p">,</span> <span class="n">brutal_kill</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">one_for_one</span></tt> 是 <a class="reference internal" href="#id4">重启策略</a> 。</p>
+<p>1和60定义了 <a class="reference internal" href="#id5">最大重启频率</a> 。</p>
+<p>元组 <cite>{ch3, ...}</cite> 是 <a class="reference internal" href="#id6">子进程规格</a> 。</p>
+</div>
+<div class="section" id="id4">
+<h2>重启策略<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="one-for-one">
+<h3>one_for_one<a class="headerlink" href="#one-for-one" title="Permalink to this headline">¶</a></h3>
+<p>如果一个子进程终止了，仅该进程被重启。</p>
+<img alt="_images/sup4.gif" src="_images/sup4.gif" />
+</div>
+<div class="section" id="one-for-all">
+<h3>one_for_all<a class="headerlink" href="#one-for-all" title="Permalink to this headline">¶</a></h3>
+<p>如果一个子进程终止了，那么所有其他的子进程都被终止然后，所有的子进程都被重启，包括原来被终止的那个。</p>
+<img alt="_images/sup5.gif" src="_images/sup5.gif" />
+</div>
+<div class="section" id="rest-for-one">
+<h3>rest_for_one<a class="headerlink" href="#rest-for-one" title="Permalink to this headline">¶</a></h3>
+<p>如果一个子进程终止了，那么后面的子进程——即在启动顺序上在这个终止了的进程后面的子进程——都被终止。然后该终止的进程和后面的子进程都被重启。</p>
+</div>
+</div>
+<div class="section" id="id5">
+<h2>最大重启频率<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>督程有一个内置的机制可以限制在给定时间间隔内可以发生的重启次数。它由两个参数 <tt class="docutils literal"><span class="pre">MaxR</span></tt> 和 <tt class="docutils literal"><span class="pre">MaxT</span></tt> 的值决定，这两个参数在由回调函数 <tt class="docutils literal"><span class="pre">init</span></tt> 返回的启动规格中。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(...)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{{</span><span class="nv">RestartStrategy</span><span class="p">,</span> <span class="nv">MaxR</span><span class="p">,</span> <span class="nv">MaxT</span><span class="p">},</span>
+          <span class="p">[</span><span class="nv">ChildSpec</span><span class="p">,</span> <span class="p">...]}}.</span>
+</pre></div>
+</div>
+<p>如果在最近的 <tt class="docutils literal"><span class="pre">MaxT</span></tt> 秒内发生的重启次数超过了 <tt class="docutils literal"><span class="pre">MaxR</span></tt> 次，那么督程会终止所有的子进程，然后结束自己。</p>
+<p>当督程终止了，那么更高一级的督程会采取一些措施。要么是重启终止了的督程，要么终止自己。</p>
+<p>这种重启机制的目的是防止出现一个进程反复因为同一个原因死掉又只知道反复重启的情况。</p>
+</div>
+<div class="section" id="id6">
+<h2>子进程规格<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nv">Id</span><span class="p">,</span> <span class="nv">StartFunc</span><span class="p">,</span> <span class="nv">Restart</span><span class="p">,</span> <span class="nv">Shutdown</span><span class="p">,</span> <span class="nv">Type</span><span class="p">,</span> <span class="nv">Modules</span><span class="p">}</span>
+    <span class="nv">Id</span> <span class="o">=</span> <span class="n">term</span><span class="p">()</span>
+    <span class="nv">StartFunc</span> <span class="o">=</span> <span class="p">{</span><span class="nv">M</span><span class="p">,</span> <span class="nv">F</span><span class="p">,</span> <span class="nv">A</span><span class="p">}</span>
+        <span class="nv">M</span> <span class="o">=</span> <span class="nv">F</span> <span class="o">=</span> <span class="n">atom</span><span class="p">()</span>
+        <span class="nv">A</span> <span class="o">=</span> <span class="p">[</span><span class="n">term</span><span class="p">()]</span>
+    <span class="nv">Restart</span> <span class="o">=</span> <span class="n">permanent</span> <span class="p">|</span> <span class="n">transient</span> <span class="p">|</span> <span class="n">temporary</span>
+    <span class="nv">Shutdown</span> <span class="o">=</span> <span class="n">brutal_kill</span> <span class="p">|</span> <span class="n">integer</span><span class="p">()</span> <span class="o">&gt;=</span><span class="mi">0</span> <span class="p">|</span> <span class="n">infinity</span>
+    <span class="nv">Type</span> <span class="o">=</span> <span class="n">worker</span> <span class="p">|</span> <span class="n">supervisor</span>
+    <span class="nv">Modules</span> <span class="o">=</span> <span class="p">[</span><span class="nv">Module</span><span class="p">]</span> <span class="p">|</span> <span class="n">dynamic</span>
+        <span class="nv">Module</span> <span class="o">=</span> <span class="n">atom</span><span class="p">()</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">Id</span></tt> 是督程内部用于标识子进程规范的名称。</li>
+<li><tt class="docutils literal"><span class="pre">StartFunc</span></tt> 定义了用于启动子进程的很难书调用。它是一个模块.函数.参数的元组，与 <tt class="docutils literal"><span class="pre">apply(M,</span> <span class="pre">F,</span> <span class="pre">A)</span></tt> 用的一样。</li>
+<li><tt class="docutils literal"><span class="pre">Restart</span></tt> 定义了一个被终止的子进程要在何时被重启：<ul>
+<li><tt class="docutils literal"><span class="pre">permanent</span></tt> 子进程总会被重启。</li>
+<li><tt class="docutils literal"><span class="pre">temporary</span></tt> 子进程从不会被重启。</li>
+<li><tt class="docutils literal"><span class="pre">transient</span></tt> 子进程只有当其被异常终止时才会被重启，即，退出理由不是 <tt class="docutils literal"><span class="pre">normal</span></tt> 。</li>
+</ul>
+</li>
+</ul>
+<ul class="simple" id="shutdown">
+<li><tt class="docutils literal"><span class="pre">Shutdown</span></tt> 定义了一个子进程应如何被终止。<ul>
+<li><tt class="docutils literal"><span class="pre">brutal_kill</span></tt> 表示子进程应使用 <tt class="docutils literal"><span class="pre">exit(Child,</span> <span class="pre">kill)</span></tt> 进行无条件终止。</li>
+<li>一个整数超时值表示督程先通过调用 <tt class="docutils literal"><span class="pre">exit(Child,</span> <span class="pre">shutdown)</span></tt> 告诉子进程要终止了，然后等待其返回退出信号。如果在指定的事件内没有接受到任何退出信号，那么使用 <tt class="docutils literal"><span class="pre">exit(Child,</span> <span class="pre">kill)</span></tt> 无条件终止子进程。</li>
+<li>如果子进程是另外一个督程，那么应该设置为 <tt class="docutils literal"><span class="pre">infinity</span></tt> 以给予子树足够的时间关闭。</li>
+</ul>
+</li>
+<li><tt class="docutils literal"><span class="pre">Type</span></tt> 指定子进程是督程还是佣程。</li>
+<li><tt class="docutils literal"><span class="pre">Modules</span></tt> 应该为只有一个元素的列表 <tt class="docutils literal"><span class="pre">[Module]</span></tt>，其中 <tt class="docutils literal"><span class="pre">Module</span></tt> 是回调模块的名称，如果子进程是督程、gen_server或者gen_fsm。如果子进程是一个gen_event，那么 <tt class="docutils literal"><span class="pre">Modules</span></tt> 应为 <tt class="docutils literal"><span class="pre">dynamic</span></tt> 。
+在升级和降级过程中发布处理器将用到这个信息，参见 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> 。</li>
+</ul>
+<p>例子：启动上面例子中的服务器 <tt class="docutils literal"><span class="pre">ch3</span></tt> 的子进程规格可以是：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">ch3</span><span class="p">,</span>
+ <span class="p">{</span><span class="n">ch3</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+ <span class="n">permanent</span><span class="p">,</span> <span class="n">brutal_kill</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}</span>
+</pre></div>
+</div>
+<p>例子：启动来自 <a class="reference external" href="gen_event.html#gen-event"><em>Gen_Event行为</em></a> 一章中的事件管理器的子进程规格可以是：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">error_man</span><span class="p">,</span>
+  <span class="p">{</span><span class="n">gen_event</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[{</span><span class="n">local</span><span class="p">,</span> <span class="n">error_man</span><span class="p">}]},</span>
+  <span class="n">permanent</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="n">dynamic</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>服务器和事件管理器都必须是可以在任何时候都能访问的注册进程，所以他们被指定为 <tt class="docutils literal"><span class="pre">permanent</span></tt> 。</p>
+<p><tt class="docutils literal"><span class="pre">ch3</span></tt> 无须在终止之前作任何清理，所以无须关闭时间，只需要 <tt class="docutils literal"><span class="pre">brutal_kill</span></tt> 就足够了。 <tt class="docutils literal"><span class="pre">error_man</span></tt> 可能要给事件处理器一些时间作清理，所以 <tt class="docutils literal"><span class="pre">Shutdown</span></tt> 设置为了5000ms。</p>
+<p>例子：启动另一个督程的子进程规格：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">sup</span><span class="p">,</span>
+ <span class="p">{</span><span class="n">sup</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+ <span class="n">transient</span><span class="p">,</span> <span class="n">infinity</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">,</span> <span class="p">[</span><span class="n">sup</span><span class="p">]}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id7">
+<h2>启动一个督程<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h2>
+<p>在上面的例子中，督程是通过调用 <tt class="docutils literal"><span class="pre">ch_sup:start_link()</span></tt> 来启动的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">supervisor</span><span class="p">:</span><span class="n">start_link</span><span class="p">(</span><span class="n">ch_sup</span><span class="p">,</span> <span class="p">[]).</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">ch_sup:start_link</span></tt> 调用了函数 <tt class="docutils literal"><span class="pre">supervisor:start_link/2</span></tt> 。这个函数产生了一个督程并联接到其上。</p>
+<ul class="simple">
+<li>第一个参数 <tt class="docutils literal"><span class="pre">ch_sup</span></tt> 是回调模块的名字，也就是回调函数 <tt class="docutils literal"><span class="pre">init</span></tt> 所放的那个模块。</li>
+<li>第二个参数，[], 这个值将被原封不动传递给回调函数 <tt class="docutils literal"><span class="pre">init</span></tt>。在这里，<tt class="docutils literal"><span class="pre">init</span></tt>无须任何输入数据将忽略这个参数。</li>
+</ul>
+<p>在这个例子中，该督程没有被注册。则必须使用它的pid。可以通过调用 <tt class="docutils literal"><span class="pre">supervisor:start_link({local,</span> <span class="pre">Name},</span> <span class="pre">Module,</span> <span class="pre">Args)</span></tt> 或者 <tt class="docutils literal"><span class="pre">supervisor:start_link({global,</span> <span class="pre">Name},</span> <span class="pre">Module,</span> <span class="pre">Args)</span></tt> 。</p>
+<p>新的督程调用回调函数 <tt class="docutils literal"><span class="pre">ch_sup:init([])</span></tt> 。 <tt class="docutils literal"><span class="pre">init</span></tt> 要返回 <tt class="docutils literal"><span class="pre">{ok,</span> <span class="pre">StartSpec}</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{{</span><span class="n">one_for_one</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">60</span><span class="p">},</span>
+          <span class="p">[{</span><span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">ch3</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+            <span class="n">permanent</span><span class="p">,</span> <span class="n">brutal_kill</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}}.</span>
+</pre></div>
+</div>
+<p>该督程然后根据启动规格中的子进程规格启动所有的子进程。这里只有一个子进程—— <tt class="docutils literal"><span class="pre">ch3</span></tt> 。</p>
+<p>注意 supervisor:start_link 是同步的。只有所有的子进程都启动了，它才会返回。</p>
+</div>
+<div class="section" id="id8">
+<h2>添加子进程<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h2>
+<p>除了静态的监督树以外，我们还可以给一个存在的督程动态添加子进程，使用以下调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">supervisor</span><span class="p">:</span><span class="n">start_child</span><span class="p">(</span><span class="nv">Sup</span><span class="p">,</span> <span class="nv">ChildSpec</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Sup</span></tt> 是督程pid或者名字。 <tt class="docutils literal"><span class="pre">ChildSpec</span></tt> 是 <a class="reference internal" href="#id6">子进程规格</a> 。</p>
+<p>使用 <tt class="docutils literal"><span class="pre">start_child/2</span></tt> 添加的子进程和其他子进程的行为方式基本一样，除了这最重要的一点：如果督程死了，并被重建了，所有动态添加的子进程将会丢失。</p>
+</div>
+<div class="section" id="id9">
+<h2>停止子进程<a class="headerlink" href="#id9" title="Permalink to this headline">¶</a></h2>
+<p>任何子进程，无论静态还是动态，都可以按照关闭规范来停止：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">supervisor</span><span class="p">:</span><span class="n">terminate_child</span><span class="p">(</span><span class="nv">Sup</span><span class="p">,</span> <span class="nv">Id</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>被停止的子进程对应的子进程规范可以通过以下调用删除：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">supervisor</span><span class="p">:</span><span class="n">delete_child</span><span class="p">(</span><span class="nv">Sup</span><span class="p">,</span> <span class="nv">Id</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Sup</span></tt> 是督程的pid或者名字。 <tt class="docutils literal"><span class="pre">Id</span></tt> 是在 <a class="reference internal" href="#id6">子进程规格</a> 中指定的id。</p>
+<p>就和动态添加的子进程一样，删除一个静态子进程的效果在督程自身重启之后会丢失。</p>
+</div>
+<div class="section" id="simple-one-for-one">
+<h2>simple_one_for_one督程<a class="headerlink" href="#simple-one-for-one" title="Permalink to this headline">¶</a></h2>
+<p>有着 <tt class="docutils literal"><span class="pre">simple_one_for_one</span></tt> 重启规则的督程就是一个简化的 <tt class="docutils literal"><span class="pre">one_for_one</span></tt> 督程，其中所有的子进程都是动态添加的同一个进程的实例。</p>
+<p>一个simple_one_for_one督程的回调模块的例子：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">simple_sup</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">supervisor</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start_link</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+
+<span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">supervisor</span><span class="p">:</span><span class="n">start_link</span><span class="p">(</span><span class="n">simple_sup</span><span class="p">,</span> <span class="p">[]).</span>
+
+<span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{{</span><span class="n">simple_one_for_one</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">},</span>
+          <span class="p">[{</span><span class="n">call</span><span class="p">,</span> <span class="p">{</span><span class="n">call</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+            <span class="n">temporary</span><span class="p">,</span> <span class="n">brutal_kill</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="p">[</span><span class="n">call</span><span class="p">]}]}}.</span>
+</pre></div>
+</div>
+<p>当启动后，该督程不会启动任何子进程。所有的子进程都是通过调用以下函数动态添加的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">supervisor</span><span class="p">:</span><span class="n">start_child</span><span class="p">(</span><span class="nv">Sup</span><span class="p">,</span> <span class="nv">List</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><cite>Sup</cite> 是督程的pid或者名字。 <tt class="docutils literal"><span class="pre">List</span></tt> 是任意的值列表，它会被添加到子进程规范中指定的参数列表中。如果启动函数被指定为 <tt class="docutils literal"><span class="pre">{M,</span> <span class="pre">F,</span> <span class="pre">A}</span></tt> ，那么会通过调用 <tt class="docutils literal"><span class="pre">apply(M,</span> <span class="pre">F,</span> <span class="pre">A++List)</span></tt> 来启动。</p>
+<p>例如，为上面的 <tt class="docutils literal"><span class="pre">simple_sup</span></tt> 添加一个子进程：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">supervisor</span><span class="p">:</span><span class="n">start_child</span><span class="p">(</span><span class="nv">Pid</span><span class="p">,</span> <span class="p">[</span><span class="n">id1</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>会导致通过 <tt class="docutils literal"><span class="pre">apply(call,</span> <span class="pre">start_link,</span> <span class="pre">[]++[id1])</span></tt> 来启动子进程， 或者更直接点：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">call</span><span class="p">:</span><span class="n">start_link</span><span class="p">(</span><span class="n">id1</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id10">
+<h2>停止<a class="headerlink" href="#id10" title="Permalink to this headline">¶</a></h2>
+<p>由于督程始终是监督树的一部分，它由它的督程进行终止。当被要求关闭时，它会根据关闭规格按照启动顺序相反的顺序停止所有的子进程，然后终止自己。</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">Supervisor行为</a><ul>
+<li><a class="reference external" href="#id2">监督原理</a></li>
+<li><a class="reference external" href="#id3">例子</a></li>
+<li><a class="reference external" href="#id4">重启策略</a><ul>
+<li><a class="reference external" href="#one-for-one">one_for_one</a></li>
+<li><a class="reference external" href="#one-for-all">one_for_all</a></li>
+<li><a class="reference external" href="#rest-for-one">rest_for_one</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#id5">最大重启频率</a></li>
+<li><a class="reference external" href="#id6">子进程规格</a></li>
+<li><a class="reference external" href="#id7">启动一个督程</a></li>
+<li><a class="reference external" href="#id8">添加子进程</a></li>
+<li><a class="reference external" href="#id9">停止子进程</a></li>
+<li><a class="reference external" href="#simple-one-for-one">simple_one_for_one督程</a></li>
+<li><a class="reference external" href="#id10">停止</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="gen_event.html" title="previous chapter">Gen_Event行为</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="sys_and_proc_lib.html" title="next chapter">Sys与Proc_Lib</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/supervisor.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="sys_and_proc_lib.html" title="Sys与Proc_Lib"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="gen_event.html" title="Gen_Event行为"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 01, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

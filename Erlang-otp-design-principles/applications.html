@@ -1,0 +1,342 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>应用 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="被包含的应用" href="included_applications.html" />
+    <link rel="prev" title="Sys与Proc_Lib" href="sys_and_proc_lib.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="included_applications.html" title="被包含的应用"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="sys_and_proc_lib.html" title="Sys与Proc_Lib"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="applications"></span><h1>应用<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本章应与 <em>app(4)</em> 和 <em>application(3)</em> 。</p>
+<div class="section" id="id2">
+<h2>应用的概念<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>当我们写了实现特定功能的代码之后，我们可能想将代码转成一个 <strong>应用</strong> （application），这是可以作为一个单元启动和停止的组建，同时它也可以在其他系统中被重用。</p>
+<p>我们要创建一个 <a class="reference internal" href="#id3">应用回调模块</a> ，其中描述了该应用应该如何被启动和停止。</p>
+<p>然后，需要一个<strong>应用规格</strong>，它被放在一个 <a class="reference internal" href="#id4">应用资源文件</a> 。我们还指定该应用由哪些模块组成，以及各个回掉模块的名字。</p>
+<p>如果我们使用 <tt class="docutils literal"><span class="pre">systools</span></tt> ——Erlang/OTP用于打包的代码（参见 <a class="reference external" href="releases.html#releases"><em>发布</em></a> ），每个应用的代码都可以按照预定的 <a class="reference internal" href="#id5">目录结构</a> 放在单独的目录中。</p>
+</div>
+<div class="section" id="id3">
+<h2>应用回调模块<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>如何启动和停止应用的代码，即监督树，由以下两个回掉函数来描述：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">start</span><span class="p">(</span><span class="nv">StartType</span><span class="p">,</span> <span class="nv">StartArgs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">}</span> <span class="p">|</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">,</span> <span class="nv">State</span><span class="p">}</span>
+<span class="nf">stop</span><span class="p">(</span><span class="nv">State</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>当要通过启动顶层督程来创建监督树的时候，会调用 <tt class="docutils literal"><span class="pre">start</span></tt> 。它要返回顶层督程的pid和一个选项值 <tt class="docutils literal"><span class="pre">State</span></tt> ，默认为 []。这个值会原样传递给 <tt class="docutils literal"><span class="pre">stop</span></tt> 。</p>
+<p><tt class="docutils literal"><span class="pre">StartType</span></tt> 通常是原子 <tt class="docutils literal"><span class="pre">normal</span></tt> 。只有在接管或故障转移中才会有其他值，参见 <a class="reference external" href="distributed_applications.html#distributed-applications"><em>分布式应用</em></a> 。 <tt class="docutils literal"><span class="pre">StartArgs</span></tt> 由 <a class="reference internal" href="#id4">应用资源文件</a> 中的键 <tt class="docutils literal"><span class="pre">mod</span></tt> 来定义。</p>
+<p>在应用被停止<strong>之后</strong>会调用 <tt class="docutils literal"><span class="pre">stop/1</span></tt> 来进行必须的清除工作。注意应用实际的停止过程，也就是监督树的关闭，是按照 <a class="reference internal" href="#id8">启动和停止应用</a> 中所描述的方式自动处理的。</p>
+<p>以下是一个例子，将来自 <a class="reference external" href="supervisor.html#supervisor"><em>督程</em></a> 一章中的督程打包为一个应用回调模块：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch_app</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">application</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">stop</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+
+<span class="nf">start</span><span class="p">(_</span><span class="nv">Type</span><span class="p">,</span> <span class="p">_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">ch_sup</span><span class="p">:</span><span class="n">start_link</span><span class="p">().</span>
+
+<span class="nf">stop</span><span class="p">(_</span><span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>一个库应用——不能被启动或者停止——则无须任何应用回调模块。</p>
+</div>
+<div class="section" id="id4">
+<h2>应用资源文件<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>我们通过创建一个放在<strong>应用资源文件</strong>——简称 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件——中的<strong>应用规格</strong>来定义一个应用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="nv">Application</span><span class="p">,</span> <span class="p">[</span><span class="nv">Opt1</span><span class="p">,...,</span><span class="nv">OptN</span><span class="p">]}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Application</span></tt> 是一个代表应用的名称的原子。文件必须被命名成 <tt class="docutils literal"><span class="pre">Application.app</span></tt> 。</p>
+<p>每一个 <tt class="docutils literal"><span class="pre">Opt</span></tt> 都是一个定义了应用某种特性的元组 <tt class="docutils literal"><span class="pre">{Key,</span> <span class="pre">Value}</span></tt> 。所有的键都是可选。忽略的键会使用默认的值。</p>
+<p>例如，用于库应用 <tt class="docutils literal"><span class="pre">libapp</span></tt> 的最小化的 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件的内容为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">libapp</span><span class="p">,</span> <span class="p">[]}.</span>
+</pre></div>
+</div>
+<p>对于像 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 这样的监督树应用的最小化 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件的内容为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">,</span>
+ <span class="p">[{</span><span class="n">mod</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_app</span><span class="p">,[]}}]}.</span>
+</pre></div>
+</div>
+<p>键 <tt class="docutils literal"><span class="pre">mod</span></tt> 定义了回调模块以及应用的启动参数，在这个例子中相应是 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 和 []。这表示应用启动的时候会调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">ch_app</span><span class="p">:</span><span class="n">start</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="p">[])</span>
+</pre></div>
+</div>
+<p>而当应用被停止的时候会调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">ch_app</span><span class="p">:</span><span class="n">stop</span><span class="p">([])</span>
+</pre></div>
+</div>
+<p>当使用 <tt class="docutils literal"><span class="pre">systools</span></tt> 时，Erlang/OTP工具的打包代码（参见 <a class="reference external" href="releases.html#releases"><em>发布</em></a> ），键 <tt class="docutils literal"><span class="pre">description</span></tt>、<tt class="docutils literal"><span class="pre">vsn</span></tt>、<tt class="docutils literal"><span class="pre">modules</span></tt>、<tt class="docutils literal"><span class="pre">registered</span></tt> 和 <tt class="docutils literal"><span class="pre">applications</span></tt> 则应该指定为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">,</span>
+ <span class="p">[{</span><span class="n">description</span><span class="p">,</span> <span class="s">&quot;Channel allocator&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">vsn</span><span class="p">,</span> <span class="s">&quot;1&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">modules</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_app</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">registered</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">applications</span><span class="p">,</span> <span class="p">[</span><span class="n">kernel</span><span class="p">,</span> <span class="n">stdlib</span><span class="p">,</span> <span class="n">sasl</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">mod</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_app</span><span class="p">,[]}}</span>
+ <span class="p">]}.</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">description</span></tt></dt>
+<dd>简短描述，字符串。默认为 &#8220;&#8221;。</dd>
+<dt><tt class="docutils literal"><span class="pre">vsn</span></tt></dt>
+<dd>版本号，字符串。默认为&#8221;&#8220;。</dd>
+<dt><tt class="docutils literal"><span class="pre">modules</span></tt></dt>
+<dd>由该应用<strong>引入</strong>的所有模块。当生成启动脚本和tar文件时， <tt class="docutils literal"><span class="pre">systools</span></tt> 将用到这个列表。一个模块必须被定义于且仅于一个应用。默认为[]。</dd>
+<dt><tt class="docutils literal"><span class="pre">registered</span></tt></dt>
+<dd>应用中所有注册进程的名称。 <tt class="docutils literal"><span class="pre">systools</span></tt> 使用这个列表来探测在应用之间是否有名称冲突。默认为 []。</dd>
+<dt><tt class="docutils literal"><span class="pre">applications</span></tt></dt>
+<dd>所有在此应用之前必须启动的应用。 <tt class="docutils literal"><span class="pre">systools</span></tt> 使用该列表来生成正确的启动脚本。默认为 []，但是注意任何应用都要至少依赖于 <tt class="docutils literal"><span class="pre">kernel</span></tt> 和 <tt class="docutils literal"><span class="pre">stdlib</span></tt> 。</dd>
+</dl>
+<p>应用资源文件的语法和内容在 <tt class="docutils literal"><span class="pre">app(4)</span></tt> 中有详细的描述。</p>
+</div>
+<div class="section" id="id5">
+<span id="app-dir"></span><h2>目录结构<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>当使用 <tt class="docutils literal"><span class="pre">systools</span></tt> 对代码进行打包的时候，每个应用的代码都放在单独的目录中 <tt class="docutils literal"><span class="pre">lib/Application-Vsn</span></tt> ，其中 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 是版本号。</p>
+<p>即便没有用到 <tt class="docutils literal"><span class="pre">systools</span></tt> ，最好也要了解它，因为Erlang/OTP其自身是按照OTP原则进行打包的所以才有了这个目录结构。如果存在一个应用的多个版本，那么代码服务器（见 <tt class="docutils literal"><span class="pre">code(3)</span></tt> ）会自动使用来自目录中版本号最高的代码。</p>
+<p>应用目录结构当然也可以用于开发环境。版本号是可以忽略的。</p>
+<p>应用目录有以下子目录：</p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">src</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">ebin</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">priv</span></tt></li>
+<li><tt class="docutils literal"><span class="pre">include</span></tt></li>
+</ul>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">src</span></tt></dt>
+<dd>包含Erlang源代码</dd>
+<dt><tt class="docutils literal"><span class="pre">ebin</span></tt></dt>
+<dd>包含Erlang目标代码—— <tt class="docutils literal"><span class="pre">beam</span></tt> 文件。 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件也放在这里。</dd>
+<dt><tt class="docutils literal"><span class="pre">priv</span></tt></dt>
+<dd>用于应用专属文件。例如，C执行程序就放在这里。应该使用函数 <tt class="docutils literal"><span class="pre">code:priv_dir/1</span></tt> 来访问这个目录。</dd>
+<dt><tt class="docutils literal"><span class="pre">include</span></tt></dt>
+<dd>用于包含文件。</dd>
+</dl>
+</div>
+<div class="section" id="id6">
+<h2>应用控制器<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p>当启动了Erlang运行时系统，作为Kernel应用的一些进程会被启动。其中一个进程是<strong>应用控制器</strong>进程，注册为 <tt class="docutils literal"><span class="pre">application_controller</span></tt> 。</p>
+<p>所有对应用的操作都由应用控制器来协调。它通过模块 <tt class="docutils literal"><span class="pre">application</span></tt> 里的函数来暴露接口， 请参考 <tt class="docutils literal"><span class="pre">application(3)</span></tt> 。尤其要了解，应用可以被加载、卸载、启动和停止。</p>
+<div class="section" id="id7">
+<h3>加载和卸载应用<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h3>
+<p>在能启动一个应用之前，首先它必须被<strong>加载</strong>。应用控制器会读取在 <tt class="docutils literal"><span class="pre">.app</span></tt> 中的信息并存起来。</p>
+<div class="highlight-python"><pre>1&gt; application:load(ch_app).
+ok
+2&gt; application:loaded_applications().
+[{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+ {stdlib,"ERTS  CXC 138 10","1.11.4.3"},
+ {ch_app,"Channel allocator","1"}]</pre>
+</div>
+<p>被停止的或者从未启动过的应用，可以被卸载。该应用相关的信息会从应用控制器的内部数据库中删除。</p>
+<div class="highlight-python"><pre>3&gt; application:unload(ch_app).
+ok
+4&gt; application:loaded_applications().
+[{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+ {stdlib,"ERTS  CXC 138 10","1.11.4.3"}]</pre>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">加载/卸载应用并不会加载/卸载该应用所使用的代码。代码加载是按照一般的方式进行的。</p>
+</div>
+</div>
+</div>
+<div class="section" id="id8">
+<h2>启动和停止应用<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h2>
+<p>启动应用要调用：</p>
+<div class="highlight-python"><pre>5&gt; application:start(ch_app).
+ok
+6&gt; application:which_applications().
+[{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+ {stdlib,"ERTS  CXC 138 10","1.11.4.3"},
+ {ch_app,"Channel allocator","1"}]</pre>
+</div>
+<p>如果应用尚未被加载，那么应用控制器会首先使用 <tt class="docutils literal"><span class="pre">application:load/1</span></tt> 加载它。它会检查 <tt class="docutils literal"><span class="pre">applications</span></tt> 键对应的值，来确保要在该应用运行之前启动的应用都启动了。</p>
+<p>然后应用控制器为应用创建一个<strong>应用主程序</strong>。它是该应用中所有进程的队长。应用主程序通过调用应用模块中的回调函数 <tt class="docutils literal"><span class="pre">start/2</span></tt> 启动应用（会给出由在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的 <tt class="docutils literal"><span class="pre">mod</span></tt> 建定义的启动参数）。</p>
+<p>停止一个应用，但不卸载，可调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="mi">7</span><span class="o">&gt;</span> <span class="nn">application</span><span class="p">:</span><span class="n">stop</span><span class="p">(</span><span class="n">ch_app</span><span class="p">).</span>
+<span class="n">ok</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id9">
+<h2>配置应用<a class="headerlink" href="#id9" title="Permalink to this headline">¶</a></h2>
+<p>可以使用<strong>配置参数</strong>来对应用进行配置。它们在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中是一个由键 <tt class="docutils literal"><span class="pre">env</span></tt> 指定的 <tt class="docutils literal"><span class="pre">{Par,</span> <span class="pre">Val}</span></tt> 元组列表。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">,</span>
+ <span class="p">[{</span><span class="n">description</span><span class="p">,</span> <span class="s">&quot;Channel allocator&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">vsn</span><span class="p">,</span> <span class="s">&quot;1&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">modules</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_app</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">registered</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">applications</span><span class="p">,</span> <span class="p">[</span><span class="n">kernel</span><span class="p">,</span> <span class="n">stdlib</span><span class="p">,</span> <span class="n">sasl</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">mod</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_app</span><span class="p">,[]}},</span>
+  <span class="p">{</span><span class="n">env</span><span class="p">,</span> <span class="p">[{</span><span class="n">file</span><span class="p">,</span> <span class="s">&quot;/usr/local/log&quot;</span><span class="p">}]}</span>
+ <span class="p">]}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Par</span></tt> 必须是一个原子， <tt class="docutils literal"><span class="pre">Val</span></tt> 可以是任意值。应用可以通过调用 <tt class="docutils literal"><span class="pre">application:get_env(App,</span> <span class="pre">Par)</span></tt> 或一些其他类似函数来获取配置参数的值，参见 <tt class="docutils literal"><span class="pre">application(3)</span></tt> 。</p>
+<p>例如：</p>
+<div class="highlight-erlang"><pre>% erl
+Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+Eshell V5.2.3.6  (abort with ^G)
+1&gt; application:start(ch_app).
+ok
+2&gt; application:get_env(ch_app, file).
+{ok,"/usr/local/log"}</pre>
+</div>
+<p><tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的值可以被<strong>系统配置文件</strong>中的值所覆盖。系统配置文件是一个包含相关应用的配置参数的文件。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">[{</span><span class="nv">Application1</span><span class="p">,</span> <span class="p">[{</span><span class="nv">Par11</span><span class="p">,</span><span class="nv">Val11</span><span class="p">},...]},</span>
+ <span class="p">...,</span>
+ <span class="p">{</span><span class="nv">ApplicationN</span><span class="p">,</span> <span class="p">[{</span><span class="nv">ParN1</span><span class="p">,</span><span class="nv">ValN1</span><span class="p">},...]}].</span>
+</pre></div>
+</div>
+<p>系统配置要被命名为 <tt class="docutils literal"><span class="pre">Name.config</span></tt> 并且要使用命令行参数 <tt class="docutils literal"><span class="pre">-config</span> <span class="pre">Name</span></tt> 来启动Erlang。更多信息参见 <tt class="docutils literal"><span class="pre">config(4)</span></tt> 。</p>
+<p>例如：创建一个文件 <tt class="docutils literal"><span class="pre">test.config</span></tt> 包含一下内容：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">[{</span><span class="n">ch_app</span><span class="p">,</span> <span class="p">[{</span><span class="n">file</span><span class="p">,</span> <span class="s">&quot;testlog&quot;</span><span class="p">}]}].</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">file</span></tt> 的值将覆盖在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中所定义的 <tt class="docutils literal"><span class="pre">file</span></tt> 的值：</p>
+<div class="highlight-erlang"><pre>% erl -config test
+Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+Eshell V5.2.3.6  (abort with ^G)
+1&gt; application:start(ch_app).
+ok
+2&gt; application:get_env(ch_app, file).
+{ok,"testlog"}</pre>
+</div>
+<p>如果使用了 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> ，那么只能使用一个系统配置文件同时该文件必须叫做 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 。</p>
+<p>在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的值，也包括系统配置文件中的值，都可以直接在命令行中被覆盖：</p>
+<div class="highlight-python"><pre>% erl -ApplName Par1 Val1 ... ParN ValN</pre>
+</div>
+<p>例如：</p>
+<div class="highlight-python"><pre>% erl -ch_app file '"testlog"'
+Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+Eshell V5.2.3.6  (abort with ^G)
+1&gt; application:start(ch_app).
+ok
+2&gt; application:get_env(ch_app, file).
+{ok,"testlog"}</pre>
+</div>
+</div>
+<div class="section" id="id10">
+<h2>应用启动类型<a class="headerlink" href="#id10" title="Permalink to this headline">¶</a></h2>
+<p>当启动应用的时候要定义一个<strong>启动类型</strong>。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">application</span><span class="p">:</span><span class="n">start</span><span class="p">(</span><span class="nv">Application</span><span class="p">,</span> <span class="nv">Type</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">application:start(Application)</span></tt> 和调用 <tt class="docutils literal"><span class="pre">application:start(Application,</span> <span class="pre">temporary)</span></tt> 是一样的。类型还可以是 <tt class="docutils literal"><span class="pre">permanent</span></tt> 持久的或者 <tt class="docutils literal"><span class="pre">transient</span></tt> 过渡的：</p>
+<ul class="simple">
+<li>如果一个持久应用终止了，所有其他的应用以及运行时系统都会被终止。</li>
+<li>如果一个过渡应用以 <tt class="docutils literal"><span class="pre">normal</span></tt> 理由终止了，那么这个信息会被上报但是不会终止其他应用。如果一个过渡应用异常终止了——即以非 <tt class="docutils literal"><span class="pre">normal</span></tt> 的理由终止了——那么其他应用以及运行时环境也会被终止。</li>
+<li>如果一个临时（temporary）应用终止了，那么会报告该信息但不会终止其他应用。</li>
+</ul>
+<p>我们总是可以通过明确调用 <tt class="docutils literal"><span class="pre">application:stop/1</span></tt> 来停止一个应用。无论是什么模式，都不会影响其他应用。</p>
+<p>注意在实践中很少使用过渡模式，因为当一个监督树终止了，退出理由会被设置为 <tt class="docutils literal"><span class="pre">shutdown</span></tt> ，而非 <tt class="docutils literal"><span class="pre">normal</span></tt> 。</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">应用</a><ul>
+<li><a class="reference external" href="#id2">应用的概念</a></li>
+<li><a class="reference external" href="#id3">应用回调模块</a></li>
+<li><a class="reference external" href="#id4">应用资源文件</a></li>
+<li><a class="reference external" href="#id5">目录结构</a></li>
+<li><a class="reference external" href="#id6">应用控制器</a><ul>
+<li><a class="reference external" href="#id7">加载和卸载应用</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#id8">启动和停止应用</a></li>
+<li><a class="reference external" href="#id9">配置应用</a></li>
+<li><a class="reference external" href="#id10">应用启动类型</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="sys_and_proc_lib.html" title="previous chapter">Sys与Proc_Lib</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="included_applications.html" title="next chapter">被包含的应用</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/applications.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="included_applications.html" title="被包含的应用"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="sys_and_proc_lib.html" title="Sys与Proc_Lib"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 01, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

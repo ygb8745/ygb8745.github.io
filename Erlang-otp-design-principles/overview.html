@@ -1,0 +1,285 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>概述 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="Gen_Server行为" href="gen_server.html" />
+    <link rel="prev" title="欢迎阅读 Erlang OTP 设计原理文档！" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_server.html" title="Gen_Server行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="欢迎阅读 Erlang OTP 设计原理文档！"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="overview"></span><h1>概述<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本<strong>OTP设计原则</strong>是针对如何根据进程、模块和目录组织Erlang代码的一系列原则。</p>
+<div class="section" id="id2">
+<h2>监督树<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<dl class="docutils">
+<dt>在Erlang/OTP中有一个基本概念叫<strong>监督树</strong>。这是一种建立在<strong>督程</strong>与<strong>佣程</strong>思想上的进程结构化模型。</dt>
+<dd><ul class="first last simple">
+<li>佣程（worker）是进行计算的进程，也就是说，它们进行实际的工作。</li>
+<li>督程（supervisor）是监视工作者行为的进程。监督者可以重启工作者如果出现了什么问题.</li>
+<li>监督树是一种将代码分成监督者和工作者的层次安排，这样才能设计和编写可容错的软件。</li>
+</ul>
+</dd>
+</dl>
+<img alt="_images/sup6.gif" src="_images/sup6.gif" />
+<p>上图中,方框提供监督,圆圈是工作者。</p>
+</div>
+<div class="section" id="id3">
+<h2>行为<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>在监督树中，很多进程有着相似结构，遵循类似的模式。例如，督程的结构都很相
+似。他们之间的唯一区别在于所监督的子进程。此外，很多佣程都是处于服务器－客户端关系中的服务器，有限状态机或者诸如错误日志这样的事件处理器。</p>
+<p>行为是对这些常见模式的形式化。其思想是将一个进程的代码划分为一个通用的部分(行为模块)和一个特定的部分（<strong>回调模块</strong>）。</p>
+<p>行为模块是Erlang/OTP的一部分。要实现一个督程，用户只需要实现回调模块，导出预定义集合中的函数—— <strong>回调函数</strong> 。</p>
+<p>一个例子可以用来说明代码是如何被划分成为通用和特定部分的：考虑下面的代码（普通Erlang编写），一个简单的服务器，用于保持跟踪一些“频道”。其他进程可以通过调用 <tt class="docutils literal"><span class="pre">alloc/0</span></tt> 和 <tt class="docutils literal"><span class="pre">free/1</span></tt> 函数来相应地分配和释放一个频道。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch1</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">alloc</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="n">free</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="nf">start</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nb">spawn</span><span class="p">(</span><span class="n">ch1</span><span class="p">,</span> <span class="n">init</span><span class="p">,</span> <span class="p">[]).</span>
+<span class="nf">alloc</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="n">ch1</span> <span class="o">!</span> <span class="p">{</span><span class="n">self</span><span class="p">(),</span> <span class="n">alloc</span><span class="p">},</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="n">ch1</span><span class="p">,</span> <span class="nv">Res</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="nv">Res</span>
+    <span class="k">end</span><span class="p">.</span>
+<span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">ch1</span> <span class="o">!</span> <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span>
+    <span class="n">ok</span><span class="p">.</span>
+<span class="nf">init</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nb">register</span><span class="p">(</span><span class="n">ch1</span><span class="p">,</span> <span class="n">self</span><span class="p">()),</span>
+    <span class="nv">Chs</span> <span class="o">=</span> <span class="n">channels</span><span class="p">(),</span>
+    <span class="n">loop</span><span class="p">(</span><span class="nv">Chs</span><span class="p">).</span>
+<span class="nf">loop</span><span class="p">(</span><span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="nv">From</span><span class="p">,</span> <span class="n">alloc</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}</span> <span class="o">=</span> <span class="n">alloc</span><span class="p">(</span><span class="nv">Chs</span><span class="p">),</span>
+            <span class="nv">From</span> <span class="o">!</span> <span class="p">{</span><span class="n">ch1</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span>
+            <span class="n">loop</span><span class="p">(</span><span class="nv">Chs2</span><span class="p">);</span>
+        <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="nv">Chs2</span> <span class="o">=</span> <span class="n">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">),</span>
+            <span class="n">loop</span><span class="p">(</span><span class="nv">Chs2</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>服务器的代码可以重写为一个通用的部分 <tt class="docutils literal"><span class="pre">server.erl</span></tt>:</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">server</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">call</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">cast</span><span class="o">/</span><span class="mi">2</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="nf">start</span><span class="p">(</span><span class="nv">Mod</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nb">spawn</span><span class="p">(</span><span class="n">server</span><span class="p">,</span> <span class="n">init</span><span class="p">,</span> <span class="p">[</span><span class="nv">Mod</span><span class="p">]).</span>
+<span class="nf">call</span><span class="p">(</span><span class="nv">Name</span><span class="p">,</span> <span class="nv">Req</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Name</span> <span class="o">!</span> <span class="p">{</span><span class="n">call</span><span class="p">,</span> <span class="n">self</span><span class="p">(),</span> <span class="nv">Req</span><span class="p">},</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="nv">Name</span><span class="p">,</span> <span class="nv">Res</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="nv">Res</span>
+    <span class="k">end</span><span class="p">.</span>
+<span class="nf">cast</span><span class="p">(</span><span class="nv">Name</span><span class="p">,</span> <span class="nv">Req</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Name</span> <span class="o">!</span> <span class="p">{</span><span class="n">cast</span><span class="p">,</span> <span class="nv">Req</span><span class="p">},</span>
+    <span class="n">ok</span><span class="p">.</span>
+<span class="nf">init</span><span class="p">(</span><span class="nv">Mod</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nb">register</span><span class="p">(</span><span class="nv">Mod</span><span class="p">,</span> <span class="n">self</span><span class="p">()),</span>
+    <span class="nv">State</span> <span class="o">=</span> <span class="nv">Mod</span><span class="p">:</span><span class="n">init</span><span class="p">(),</span>
+    <span class="n">loop</span><span class="p">(</span><span class="nv">Mod</span><span class="p">,</span> <span class="nv">State</span><span class="p">).</span>
+<span class="nf">loop</span><span class="p">(</span><span class="nv">Mod</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="n">call</span><span class="p">,</span> <span class="nv">From</span><span class="p">,</span> <span class="nv">Req</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="nv">Res</span><span class="p">,</span> <span class="nv">State2</span><span class="p">}</span> <span class="o">=</span> <span class="nv">Mod</span><span class="p">:</span><span class="n">handle_call</span><span class="p">(</span><span class="nv">Req</span><span class="p">,</span> <span class="nv">State</span><span class="p">),</span>
+            <span class="nv">From</span> <span class="o">!</span> <span class="p">{</span><span class="nv">Mod</span><span class="p">,</span> <span class="nv">Res</span><span class="p">},</span>
+            <span class="n">loop</span><span class="p">(</span><span class="nv">Mod</span><span class="p">,</span> <span class="nv">State2</span><span class="p">);</span>
+        <span class="p">{</span><span class="n">cast</span><span class="p">,</span> <span class="nv">Req</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="nv">State2</span> <span class="o">=</span> <span class="nv">Mod</span><span class="p">:</span><span class="n">handle_cast</span><span class="p">(</span><span class="nv">Req</span><span class="p">,</span> <span class="nv">State</span><span class="p">),</span>
+            <span class="n">loop</span><span class="p">(</span><span class="nv">Mod</span><span class="p">,</span> <span class="nv">State2</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>还有一个回调模块 <tt class="docutils literal"><span class="pre">ch2.erl</span></tt>:</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch2</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">alloc</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="n">free</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="n">handle_call</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">handle_cast</span><span class="o">/</span><span class="mi">2</span><span class="p">]).</span>
+
+<span class="nf">start</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">server</span><span class="p">:</span><span class="n">start</span><span class="p">(</span><span class="n">ch2</span><span class="p">).</span>
+
+<span class="nf">alloc</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">server</span><span class="p">:</span><span class="n">call</span><span class="p">(</span><span class="n">ch2</span><span class="p">,</span> <span class="n">alloc</span><span class="p">).</span>
+
+<span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">server</span><span class="p">:</span><span class="n">cast</span><span class="p">(</span><span class="n">ch2</span><span class="p">,</span> <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">}).</span>
+
+<span class="nf">init</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="n">channels</span><span class="p">().</span>
+
+<span class="nf">handle_call</span><span class="p">(</span><span class="n">alloc</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">alloc</span><span class="p">(</span><span class="nv">Chs</span><span class="p">).</span> <span class="c">% =&gt; {Ch,Chs2}</span>
+
+<span class="nf">handle_cast</span><span class="p">({</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">).</span> <span class="c">% =&gt; Chs2</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>注意以下几点:</dt>
+<dd><ul class="first last simple">
+<li><tt class="docutils literal"><span class="pre">server</span></tt> 中的代码可以被重用于建立很多不同的服务器端。</li>
+<li>服务器的名字——这个例子中为原子 <tt class="docutils literal"><span class="pre">ch2</span></tt> ——对于客户端函数的用户而言是隐藏的。这意味无须影响客户端就可以改变名字。</li>
+<li>协议(发给服务器和从服务器接收到的消息)也是隐藏的。这是很好的编程实践，让我们可以在不改变接口函数的代码的情况下改变协议。</li>
+<li>我们可以扩展服务器 <tt class="docutils literal"><span class="pre">server</span></tt> 的功能，而不用改变 <tt class="docutils literal"><span class="pre">ch2</span></tt> 或任何其它的回调模块。</li>
+</ul>
+</dd>
+</dl>
+<p>(在上面的 <tt class="docutils literal"><span class="pre">ch1.erl</span></tt> 和 <tt class="docutils literal"><span class="pre">ch2.erl</span></tt> 中， <tt class="docutils literal"><span class="pre">channels/0</span></tt> 、 <tt class="docutils literal"><span class="pre">alloc/1</span></tt> 、 <tt class="docutils literal"><span class="pre">free/2</span></tt> 的实现被特意省略了，因为和这个例子无关。为了完整起见，下面会给出这些函数的一种写法。注意这只是个例子，实际的实现必须能够处理一些特殊情况，如频道用光无法分配等)</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">channels</span><span class="p">()</span> <span class="o">-&gt;</span>
+   <span class="p">{_</span><span class="nv">Allocated</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">_</span><span class="nv">Free</span> <span class="o">=</span> <span class="nn">lists</span><span class="p">:</span><span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">100</span><span class="p">)}.</span>
+
+<span class="nf">alloc</span><span class="p">({</span><span class="nv">Allocated</span><span class="p">,</span> <span class="p">[</span><span class="nv">H</span><span class="p">|</span><span class="nv">T</span><span class="p">]</span> <span class="o">=</span> <span class="p">_</span><span class="nv">Free</span><span class="p">})</span> <span class="o">-&gt;</span>
+   <span class="p">{</span><span class="nv">H</span><span class="p">,</span> <span class="p">{[</span><span class="nv">H</span><span class="p">|</span><span class="nv">Allocated</span><span class="p">],</span> <span class="nv">T</span><span class="p">}}.</span>
+
+<span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="p">{</span><span class="nv">Alloc</span><span class="p">,</span> <span class="nv">Free</span><span class="p">}</span> <span class="o">=</span> <span class="nv">Channels</span><span class="p">)</span> <span class="o">-&gt;</span>
+   <span class="k">case</span> <span class="nn">lists</span><span class="p">:</span><span class="n">member</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Alloc</span><span class="p">)</span> <span class="k">of</span>
+      <span class="n">true</span> <span class="o">-&gt;</span>
+         <span class="p">{</span><span class="nn">lists</span><span class="p">:</span><span class="n">delete</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Alloc</span><span class="p">),</span> <span class="p">[</span><span class="nv">Ch</span><span class="p">|</span><span class="nv">Free</span><span class="p">]};</span>
+      <span class="n">false</span> <span class="o">-&gt;</span>
+         <span class="nv">Channels</span>
+   <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>不用行为来写的代码可能会更快些，但是所提高的效率是要付出通用性上的代价。对系统中以一致的方式管理所有应用的能力是非常重要的。</p>
+<p>使用行为也可以使得由其他程序员所写的代码更容易阅读和理解。专门的编程结构，可能会更高效，但是往往更加难于理解。</p>
+<p>模块 <tt class="docutils literal"><span class="pre">server</span></tt> 对应的是极大简化了的Erlang/OTP中的 <tt class="docutils literal"><span class="pre">gen_server</span></tt> 行为。</p>
+<p>标准 Erlang/OTP 行为有：</p>
+<dl class="docutils">
+<dt>gen_server</dt>
+<dd>用于实现 C/S 结构中的服务端。</dd>
+<dt>gen_fsm</dt>
+<dd>用于实现有限状态机。</dd>
+<dt>gen_event</dt>
+<dd>用于实现事件处理功能。</dd>
+<dt>supervisor</dt>
+<dd>用于实现监督树中的督程。</dd>
+</dl>
+<p>编译器看到模块属性 <tt class="docutils literal"><span class="pre">-behaviour(Behaviour).</span></tt> 后会提出缺少的回调函数的警告。例如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">chs3</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">gen_server</span><span class="p">).</span>
+<span class="p">...</span>
+
+<span class="mi">3</span><span class="o">&gt;</span> <span class="n">c</span><span class="p">(</span><span class="n">chs3</span><span class="p">).</span>
+<span class="p">.</span><span class="o">/</span><span class="n">chs3</span><span class="p">.</span><span class="nn">erl</span><span class="p">:</span><span class="mi">10</span><span class="p">:</span> <span class="nv">Warning</span><span class="p">:</span> <span class="n">undefined</span> <span class="n">call</span><span class="o">-</span><span class="n">back</span> <span class="n">function</span> <span class="n">handle_call</span><span class="o">/</span><span class="mi">3</span>
+<span class="p">{</span><span class="n">ok</span><span class="p">,</span><span class="n">chs3</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id4">
+<h2>应用<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>Erlang/OTP还提供了一系列组件，每个实现一些特定的功能。这种组件用Erlang/OTP的术语来说，叫做<strong>应用</strong>（application）。Erlang/OTP应用的例子有：Mnesia，具备了所有数据库服务编程所需的东西；Debugger，用于调试Erlang程序。基于Erlang/OTP的最精简的系统由应用KERNEL和STDLIB组成。</p>
+<p>使用标准行为可以很简单地将一个带有进程的应用程序实现为监督树。</p>
+<p>如何编写应用将在 <a class="reference external" href="applications.html#applications"><em>应用</em></a> 一节进行描述。</p>
+</div>
+<div class="section" id="id5">
+<h2>发布<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>一个<strong>发布</strong>（release）是一个由Erlang/OTP应用的子集和一系列用户定义的应用组成的完整系统。</p>
+<p>如何编写应用将在<tt class="docutils literal"><span class="pre">发布</span> <span class="pre">&lt;releases&gt;</span></tt>一节中进行描述。</p>
+</div>
+<div class="section" id="id6">
+<h2>发布处理<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p><strong>发布处理</strong>是在一个（可能）运行中的系统上，对一个发布的不同版本之间进行升级和降级的操作。在 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> 一节中会描述怎么做。</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">概述</a><ul>
+<li><a class="reference external" href="#id2">监督树</a></li>
+<li><a class="reference external" href="#id3">行为</a></li>
+<li><a class="reference external" href="#id4">应用</a></li>
+<li><a class="reference external" href="#id5">发布</a></li>
+<li><a class="reference external" href="#id6">发布处理</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="index.html" title="previous chapter">欢迎阅读 Erlang OTP 设计原理文档！</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="gen_server.html" title="next chapter">Gen_Server行为</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/overview.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_server.html" title="Gen_Server行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="欢迎阅读 Erlang OTP 设计原理文档！"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 02, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

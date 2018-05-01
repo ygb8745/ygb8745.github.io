@@ -1,0 +1,245 @@
+.. _supervisor:
+
+Supervisor行为
+==============
+本节应该与 :manpage:`supervisor(3)` 相结合阅读，其中有所有的督程行为的细节。
+
+监督原理
+--------
+
+督程负责启动、停止和监视它的子进程。督程的基本思想是它要保持它的子进程有效，必要的时候可以重启他们。
+
+要启动和监视的子进程由一个 `子进程规格`_ 的列表来指定。子进程按照在这个列表中的顺序启动，并且按照相反的顺序终止。
+
+例子
+----
+启动来自 :ref:`gen_server一章 <gen_server-example>` 的服务器的督程的回调模块可以是：
+
+.. code-block:: erlang
+
+    -module(ch_sup).
+    -behaviour(supervisor).
+
+    -export([start_link/0]).
+    -export([init/1]).
+
+    start_link() ->
+        supervisor:start_link(ch_sup, []).
+
+    init(_Args) ->
+        {ok, {{one_for_one, 1, 60},
+              [{ch3, {ch3, start_link, []},
+                permanent, brutal_kill, worker, [ch3]}]}}.
+
+``one_for_one`` 是 `重启策略`_ 。
+
+1和60定义了 `最大重启频率`_ 。
+
+元组 `{ch3, ...}` 是 `子进程规格`_ 。
+
+重启策略
+--------
+
+one_for_one
+~~~~~~~~~~~
+如果一个子进程终止了，仅该进程被重启。
+
+.. image:: .static/sup4.gif
+
+one_for_all
+~~~~~~~~~~~
+如果一个子进程终止了，那么所有其他的子进程都被终止然后，所有的子进程都被重启，包括原来被终止的那个。
+
+.. image:: .static/sup5.gif
+
+rest_for_one
+~~~~~~~~~~~~
+如果一个子进程终止了，那么后面的子进程——即在启动顺序上在这个终止了的进程后面的子进程——都被终止。然后该终止的进程和后面的子进程都被重启。
+
+最大重启频率
+------------
+督程有一个内置的机制可以限制在给定时间间隔内可以发生的重启次数。它由两个参数 ``MaxR`` 和 ``MaxT`` 的值决定，这两个参数在由回调函数 ``init`` 返回的启动规格中。
+
+.. code-block:: erlang
+
+    init(...) ->
+        {ok, {{RestartStrategy, MaxR, MaxT},
+              [ChildSpec, ...]}}.
+
+如果在最近的 ``MaxT`` 秒内发生的重启次数超过了 ``MaxR`` 次，那么督程会终止所有的子进程，然后结束自己。
+
+当督程终止了，那么更高一级的督程会采取一些措施。要么是重启终止了的督程，要么终止自己。
+
+这种重启机制的目的是防止出现一个进程反复因为同一个原因死掉又只知道反复重启的情况。
+
+子进程规格
+----------
+.. code-block:: erlang
+
+    {Id, StartFunc, Restart, Shutdown, Type, Modules}
+        Id = term()
+        StartFunc = {M, F, A}
+            M = F = atom()
+            A = [term()]
+        Restart = permanent | transient | temporary
+        Shutdown = brutal_kill | integer() >=0 | infinity
+        Type = worker | supervisor
+        Modules = [Module] | dynamic
+            Module = atom()
+
+
+* ``Id`` 是督程内部用于标识子进程规范的名称。
+* ``StartFunc`` 定义了用于启动子进程的很难书调用。它是一个模块.函数.参数的元组，与 ``apply(M, F, A)`` 用的一样。
+* ``Restart`` 定义了一个被终止的子进程要在何时被重启：
+
+  * ``permanent`` 子进程总会被重启。
+  * ``temporary`` 子进程从不会被重启。
+  * ``transient`` 子进程只有当其被异常终止时才会被重启，即，退出理由不是 ``normal`` 。
+
+.. _shutdown:
+
+* ``Shutdown`` 定义了一个子进程应如何被终止。
+
+  * ``brutal_kill`` 表示子进程应使用 ``exit(Child, kill)`` 进行无条件终止。
+  * 一个整数超时值表示督程先通过调用 ``exit(Child, shutdown)`` 告诉子进程要终止了，然后等待其返回退出信号。如果在指定的事件内没有接受到任何退出信号，那么使用 ``exit(Child, kill)`` 无条件终止子进程。
+  * 如果子进程是另外一个督程，那么应该设置为 ``infinity`` 以给予子树足够的时间关闭。
+
+* ``Type`` 指定子进程是督程还是佣程。
+* ``Modules`` 应该为只有一个元素的列表 ``[Module]``\ ，其中 ``Module`` 是回调模块的名称，如果子进程是督程、gen_server或者gen_fsm。如果子进程是一个gen_event，那么 ``Modules`` 应为 ``dynamic`` 。
+  在升级和降级过程中发布处理器将用到这个信息，参见 :ref:`发布处理 <release-handling>` 。
+
+例子：启动上面例子中的服务器 ``ch3`` 的子进程规格可以是：
+
+.. code-block:: erlang
+
+   {ch3,
+    {ch3, start_link, []},
+    permanent, brutal_kill, worker, [ch3]}
+
+例子：启动来自 :ref:`gen_event` 一章中的事件管理器的子进程规格可以是：
+
+.. code-block:: erlang
+
+   {error_man,
+     {gen_event, start_link, [{local, error_man}]},
+     permanent, 5000, worker, dynamic}
+
+服务器和事件管理器都必须是可以在任何时候都能访问的注册进程，所以他们被指定为 ``permanent`` 。
+
+``ch3`` 无须在终止之前作任何清理，所以无须关闭时间，只需要 ``brutal_kill`` 就足够了。 ``error_man`` 可能要给事件处理器一些时间作清理，所以 ``Shutdown`` 设置为了5000ms。
+
+例子：启动另一个督程的子进程规格：
+
+.. code-block:: erlang
+
+    {sup,
+     {sup, start_link, []},
+     transient, infinity, supervisor, [sup]}
+
+启动一个督程
+------------
+在上面的例子中，督程是通过调用 ``ch_sup:start_link()`` 来启动的：
+
+.. code-block:: erlang
+
+    start_link() ->
+        supervisor:start_link(ch_sup, []).
+
+``ch_sup:start_link`` 调用了函数 ``supervisor:start_link/2`` 。这个函数产生了一个督程并联接到其上。
+
+* 第一个参数 ``ch_sup`` 是回调模块的名字，也就是回调函数 ``init`` 所放的那个模块。
+* 第二个参数，[], 这个值将被原封不动传递给回调函数 ``init``\ 。在这里，\ ``init``\ 无须任何输入数据将忽略这个参数。
+
+在这个例子中，该督程没有被注册。则必须使用它的pid。可以通过调用 ``supervisor:start_link({local, Name}, Module, Args)`` 或者 ``supervisor:start_link({global, Name}, Module, Args)`` 。
+
+新的督程调用回调函数 ``ch_sup:init([])`` 。 ``init`` 要返回 ``{ok, StartSpec}`` ：
+
+.. code-block:: erlang
+
+    init(_Args) ->
+        {ok, {{one_for_one, 1, 60},
+              [{ch3, {ch3, start_link, []},
+                permanent, brutal_kill, worker, [ch3]}]}}.
+
+该督程然后根据启动规格中的子进程规格启动所有的子进程。这里只有一个子进程—— ``ch3`` 。
+
+注意 supervisor:start_link 是同步的。只有所有的子进程都启动了，它才会返回。
+
+添加子进程
+--------------
+除了静态的监督树以外，我们还可以给一个存在的督程动态添加子进程，使用以下调用：
+
+.. code-block:: erlang
+
+    supervisor:start_child(Sup, ChildSpec)
+
+``Sup`` 是督程pid或者名字。 ``ChildSpec`` 是 `子进程规格`_ 。
+
+使用 ``start_child/2`` 添加的子进程和其他子进程的行为方式基本一样，除了这最重要的一点：如果督程死了，并被重建了，所有动态添加的子进程将会丢失。
+
+停止子进程
+----------
+任何子进程，无论静态还是动态，都可以按照关闭规范来停止：
+
+.. code-block:: erlang
+
+   supervisor:terminate_child(Sup, Id)
+
+被停止的子进程对应的子进程规范可以通过以下调用删除：
+
+.. code-block:: erlang
+
+   supervisor:delete_child(Sup, Id)
+
+``Sup`` 是督程的pid或者名字。 ``Id`` 是在 `子进程规格`_ 中指定的id。
+
+就和动态添加的子进程一样，删除一个静态子进程的效果在督程自身重启之后会丢失。
+
+simple_one_for_one督程
+----------------------
+有着 ``simple_one_for_one`` 重启规则的督程就是一个简化的 ``one_for_one`` 督程，其中所有的子进程都是动态添加的同一个进程的实例。
+
+一个simple_one_for_one督程的回调模块的例子：
+
+.. code-block:: erlang
+
+    -module(simple_sup).
+    -behaviour(supervisor).
+
+    -export([start_link/0]).
+    -export([init/1]).
+
+    start_link() ->
+        supervisor:start_link(simple_sup, []).
+
+    init(_Args) ->
+        {ok, {{simple_one_for_one, 0, 1},
+              [{call, {call, start_link, []},
+                temporary, brutal_kill, worker, [call]}]}}.
+       
+
+当启动后，该督程不会启动任何子进程。所有的子进程都是通过调用以下函数动态添加的：
+
+.. code-block:: erlang
+
+   supervisor:start_child(Sup, List)
+
+`Sup` 是督程的pid或者名字。 ``List`` 是任意的值列表，它会被添加到子进程规范中指定的参数列表中。如果启动函数被指定为 ``{M, F, A}`` ，那么会通过调用 ``apply(M, F, A++List)`` 来启动。
+
+例如，为上面的 ``simple_sup`` 添加一个子进程：
+
+.. code-block:: erlang
+
+   supervisor:start_child(Pid, [id1])
+
+会导致通过 ``apply(call, start_link, []++[id1])`` 来启动子进程， 或者更直接点：
+
+.. code-block:: erlang
+
+   call:start_link(id1)
+
+停止
+----
+
+由于督程始终是监督树的一部分，它由它的督程进行终止。当被要求关闭时，它会根据关闭规格按照启动顺序相反的顺序停止所有的子进程，然后终止自己。
+

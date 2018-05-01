@@ -1,0 +1,301 @@
+.. _applications: 
+
+应用
+====
+本章应与 :manpage:`app(4)` 和 :manpage:`application(3)` 。
+
+应用的概念
+----------
+当我们写了实现特定功能的代码之后，我们可能想将代码转成一个 **应用** （application），这是可以作为一个单元启动和停止的组建，同时它也可以在其他系统中被重用。
+
+我们要创建一个 `应用回调模块`_ ，其中描述了该应用应该如何被启动和停止。
+
+然后，需要一个\ **应用规格**\ ，它被放在一个 `应用资源文件`_ 。我们还指定该应用由哪些模块组成，以及各个回掉模块的名字。
+
+如果我们使用 ``systools`` ——Erlang/OTP用于打包的代码（参见 :ref:`发布 <releases>` ），每个应用的代码都可以按照预定的 `目录结构`_ 放在单独的目录中。
+
+应用回调模块
+------------
+如何启动和停止应用的代码，即监督树，由以下两个回掉函数来描述：
+
+.. code-block:: erlang
+
+    start(StartType, StartArgs) -> {ok, Pid} | {ok, Pid, State}
+    stop(State)
+
+当要通过启动顶层督程来创建监督树的时候，会调用 ``start`` 。它要返回顶层督程的pid和一个选项值 ``State`` ，默认为 []。这个值会原样传递给 ``stop`` 。
+
+``StartType`` 通常是原子 ``normal`` 。只有在接管或故障转移中才会有其他值，参见 :ref:`分布式应用 <distributed-applications>` 。 ``StartArgs`` 由 `应用资源文件`_ 中的键 ``mod`` 来定义。
+
+在应用被停止\ **之后**\ 会调用 ``stop/1`` 来进行必须的清除工作。注意应用实际的停止过程，也就是监督树的关闭，是按照 `启动和停止应用`_ 中所描述的方式自动处理的。
+
+以下是一个例子，将来自 :ref:`督程 <supervisor>` 一章中的督程打包为一个应用回调模块：
+
+.. code-block:: erlang
+
+    -module(ch_app).
+    -behaviour(application).
+
+    -export([start/2, stop/1]).
+
+    start(_Type, _Args) ->
+        ch_sup:start_link().
+
+    stop(_State) ->
+        ok.
+
+一个库应用——不能被启动或者停止——则无须任何应用回调模块。
+
+应用资源文件
+------------
+我们通过创建一个放在\ **应用资源文件**\ ——简称 ``.app`` 文件——中的\ **应用规格**\来定义一个应用：
+
+.. code-block:: erlang
+
+    {application, Application, [Opt1,...,OptN]}.
+
+``Application`` 是一个代表应用的名称的原子。文件必须被命名成 ``Application.app`` 。
+
+每一个 ``Opt`` 都是一个定义了应用某种特性的元组 ``{Key, Value}`` 。所有的键都是可选。忽略的键会使用默认的值。
+
+例如，用于库应用 ``libapp`` 的最小化的 ``.app`` 文件的内容为：
+
+.. code-block:: erlang
+
+    {application, libapp, []}.
+
+对于像 ``ch_app`` 这样的监督树应用的最小化 ``.app`` 文件的内容为：
+
+.. code-block:: erlang
+
+    {application, ch_app,
+     [{mod, {ch_app,[]}}]}.
+
+键 ``mod`` 定义了回调模块以及应用的启动参数，在这个例子中相应是 ``ch_app`` 和 []。这表示应用启动的时候会调用：
+
+.. code-block:: erlang
+
+    ch_app:start(normal, [])
+
+而当应用被停止的时候会调用：
+
+.. code-block:: erlang
+
+    ch_app:stop([])
+
+当使用 ``systools`` 时，Erlang/OTP工具的打包代码（参见 :ref:`发布 <releases>` ），键 ``description``\ 、\ ``vsn``\ 、\ ``modules``\ 、\ ``registered`` 和 ``applications`` 则应该指定为：
+
+.. code-block:: erlang
+
+    {application, ch_app,
+     [{description, "Channel allocator"},
+      {vsn, "1"},
+      {modules, [ch_app, ch_sup, ch3]},
+      {registered, [ch3]},
+      {applications, [kernel, stdlib, sasl]},
+      {mod, {ch_app,[]}}
+     ]}.
+
+``description``
+    简短描述，字符串。默认为 ""。
+``vsn``
+    版本号，字符串。默认为""。
+``modules``
+    由该应用\ **引入**\ 的所有模块。当生成启动脚本和tar文件时， ``systools`` 将用到这个列表。一个模块必须被定义于且仅于一个应用。默认为[]。
+``registered``
+    应用中所有注册进程的名称。 ``systools`` 使用这个列表来探测在应用之间是否有名称冲突。默认为 []。
+``applications``
+    所有在此应用之前必须启动的应用。 ``systools`` 使用该列表来生成正确的启动脚本。默认为 []，但是注意任何应用都要至少依赖于 ``kernel`` 和 ``stdlib`` 。
+
+应用资源文件的语法和内容在 ``app(4)`` 中有详细的描述。
+
+.. _app_dir:
+
+目录结构
+--------
+当使用 ``systools`` 对代码进行打包的时候，每个应用的代码都放在单独的目录中 ``lib/Application-Vsn`` ，其中 ``Vsn`` 是版本号。
+
+即便没有用到 ``systools`` ，最好也要了解它，因为Erlang/OTP其自身是按照OTP原则进行打包的所以才有了这个目录结构。如果存在一个应用的多个版本，那么代码服务器（见 ``code(3)`` ）会自动使用来自目录中版本号最高的代码。
+
+应用目录结构当然也可以用于开发环境。版本号是可以忽略的。
+
+应用目录有以下子目录：
+
+* ``src``
+* ``ebin``
+* ``priv``
+* ``include``
+
+``src``
+    包含Erlang源代码
+``ebin``
+    包含Erlang目标代码—— ``beam`` 文件。 ``.app`` 文件也放在这里。
+``priv``
+    用于应用专属文件。例如，C执行程序就放在这里。应该使用函数 ``code:priv_dir/1`` 来访问这个目录。
+``include``
+    用于包含文件。
+
+应用控制器
+----------
+当启动了Erlang运行时系统，作为Kernel应用的一些进程会被启动。其中一个进程是\ **应用控制器**\ 进程，注册为 ``application_controller`` 。
+
+所有对应用的操作都由应用控制器来协调。它通过模块 ``application`` 里的函数来暴露接口， 请参考 ``application(3)`` 。尤其要了解，应用可以被加载、卸载、启动和停止。
+
+加载和卸载应用
+~~~~~~~~~~~~~~
+在能启动一个应用之前，首先它必须被\ **加载**\ 。应用控制器会读取在 ``.app`` 中的信息并存起来。
+
+::
+
+    1> application:load(ch_app).
+    ok
+    2> application:loaded_applications().
+    [{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+     {stdlib,"ERTS  CXC 138 10","1.11.4.3"},
+     {ch_app,"Channel allocator","1"}]
+
+被停止的或者从未启动过的应用，可以被卸载。该应用相关的信息会从应用控制器的内部数据库中删除。
+
+::
+
+    3> application:unload(ch_app).
+    ok
+    4> application:loaded_applications().
+    [{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+     {stdlib,"ERTS  CXC 138 10","1.11.4.3"}]
+
+.. note::
+
+    加载/卸载应用并不会加载/卸载该应用所使用的代码。代码加载是按照一般的方式进行的。
+
+启动和停止应用
+--------------
+启动应用要调用：
+
+::
+
+    5> application:start(ch_app).
+    ok
+    6> application:which_applications().
+    [{kernel,"ERTS  CXC 138 10","2.8.1.3"},
+     {stdlib,"ERTS  CXC 138 10","1.11.4.3"},
+     {ch_app,"Channel allocator","1"}]
+
+如果应用尚未被加载，那么应用控制器会首先使用 ``application:load/1`` 加载它。它会检查 ``applications`` 键对应的值，来确保要在该应用运行之前启动的应用都启动了。
+
+然后应用控制器为应用创建一个\ **应用主程序**\ 。它是该应用中所有进程的队长。应用主程序通过调用应用模块中的回调函数 ``start/2`` 启动应用（会给出由在 ``.app`` 文件中的 ``mod`` 建定义的启动参数）。
+
+停止一个应用，但不卸载，可调用：
+
+.. code-block:: erlang
+
+    7> application:stop(ch_app).
+    ok
+
+配置应用
+--------
+可以使用\ **配置参数**\ 来对应用进行配置。它们在 ``.app`` 文件中是一个由键 ``env`` 指定的 ``{Par, Val}`` 元组列表。
+
+.. code-block:: erlang
+
+    {application, ch_app,
+     [{description, "Channel allocator"},
+      {vsn, "1"},
+      {modules, [ch_app, ch_sup, ch3]},
+      {registered, [ch3]},
+      {applications, [kernel, stdlib, sasl]},
+      {mod, {ch_app,[]}},
+      {env, [{file, "/usr/local/log"}]}
+     ]}.
+
+``Par`` 必须是一个原子， ``Val`` 可以是任意值。应用可以通过调用 ``application:get_env(App, Par)`` 或一些其他类似函数来获取配置参数的值，参见 ``application(3)`` 。
+
+例如：
+
+.. code-block:: erlang
+
+
+    % erl
+    Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+    Eshell V5.2.3.6  (abort with ^G)
+    1> application:start(ch_app).
+    ok
+    2> application:get_env(ch_app, file).
+    {ok,"/usr/local/log"}
+
+
+``.app`` 文件中的值可以被\ **系统配置文件**\ 中的值所覆盖。系统配置文件是一个包含相关应用的配置参数的文件。
+
+.. code-block:: erlang
+
+
+    [{Application1, [{Par11,Val11},...]},
+     ...,
+     {ApplicationN, [{ParN1,ValN1},...]}].
+
+系统配置要被命名为 ``Name.config`` 并且要使用命令行参数 ``-config Name`` 来启动Erlang。更多信息参见 ``config(4)`` 。
+
+例如：创建一个文件 ``test.config`` 包含一下内容：
+
+.. code-block:: erlang
+
+
+    [{ch_app, [{file, "testlog"}]}].
+
+``file`` 的值将覆盖在 ``.app`` 文件中所定义的 ``file`` 的值：
+
+.. code-block:: erlang
+
+    % erl -config test
+    Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+    Eshell V5.2.3.6  (abort with ^G)
+    1> application:start(ch_app).
+    ok
+    2> application:get_env(ch_app, file).
+    {ok,"testlog"}
+
+如果使用了 :ref:`发布处理 <release-handling>` ，那么只能使用一个系统配置文件同时该文件必须叫做 ``sys.config`` 。
+
+在 ``.app`` 文件中的值，也包括系统配置文件中的值，都可以直接在命令行中被覆盖：
+
+::
+    
+    % erl -ApplName Par1 Val1 ... ParN ValN
+
+例如：
+
+::
+    
+    % erl -ch_app file '"testlog"'
+    Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+    Eshell V5.2.3.6  (abort with ^G)
+    1> application:start(ch_app).
+    ok
+    2> application:get_env(ch_app, file).
+    {ok,"testlog"}
+
+
+应用启动类型
+------------
+
+当启动应用的时候要定义一个\ **启动类型**\ 。
+
+.. code-block:: erlang
+
+
+    application:start(Application, Type)
+
+``application:start(Application)`` 和调用 ``application:start(Application, temporary)`` 是一样的。类型还可以是 ``permanent`` 持久的或者 ``transient`` 过渡的：
+
+* 如果一个持久应用终止了，所有其他的应用以及运行时系统都会被终止。
+* 如果一个过渡应用以 ``normal`` 理由终止了，那么这个信息会被上报但是不会终止其他应用。如果一个过渡应用异常终止了——即以非 ``normal`` 的理由终止了——那么其他应用以及运行时环境也会被终止。
+* 如果一个临时（temporary）应用终止了，那么会报告该信息但不会终止其他应用。
+
+我们总是可以通过明确调用 ``application:stop/1`` 来停止一个应用。无论是什么模式，都不会影响其他应用。
+
+注意在实践中很少使用过渡模式，因为当一个监督树终止了，退出理由会被设置为 ``shutdown`` ，而非 ``normal`` 。
+
+

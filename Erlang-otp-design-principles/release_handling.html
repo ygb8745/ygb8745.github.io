@@ -1,0 +1,468 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>发布处理 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="Appup Cookbook" href="appup_cookbook.html" />
+    <link rel="prev" title="发布" href="releases.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="appup_cookbook.html" title="Appup Cookbook"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="releases.html" title="发布"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="release-handling"></span><h1>发布处理<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="id2">
+<h2>发布处理原理<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>Erlang编程语言的一个很重要的特点是能在运行时变更模块代码，即<strong>Erlang参考手册</strong>中所描述的<strong>代码替换</strong>。</p>
+<p>基于这个功能，OTP应用SASL提供了一个用于在运行时对整个发布的不同版本之间进行升级和降级的框架。这就是我们称之为<strong>发布处理</strong>的东西。</p>
+<p>该框架由用于生成脚本和构建发布包的离线支持工具（ <tt class="docutils literal"><span class="pre">systools</span></tt> ）和用于解压和安装发布包的在线支持工具（ <tt class="docutils literal"><span class="pre">release_handler</span></tt> ）组成。</p>
+<p>因此，我们要注意基于 Erlang/OTP，并启用发布处理的系统，最少由Kernel、STDLIB和SASL组成。</p>
+<ol class="arabic simple">
+<li>一个发布是由前一章 <a class="reference external" href="releases.html#releases"><em>发布</em></a> 中所描述的方式创建的。然后该发布被传输并安装到目标环境中。关于如何安装首个目标系统的信息，请参考<strong>系统原理</strong>（System Principles）。</li>
+<li>在开发环境中对代码进行修改，比如错误修正。</li>
+<li>在某一刻，可以发布一个新的版本了。会更新相关的 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件并写入一个新的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件。</li>
+<li>对于每个被修改过的应用，会创建一个 <a class="reference internal" href="#id7">应用升级文件</a> ， <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件。在该文件中描述了如何在应用的新旧版本之间升级或降级。</li>
+<li>根据 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件，会创建一个 <a class="reference internal" href="#id8">发布升级文件</a> 。这个文件描述了如何在整个发布的新旧版本之间升级或者降级。</li>
+<li>生成新的发布包并传输到目标系统。</li>
+<li>使用发布处理器解开新的发布包。</li>
+<li>还是使用了发布处理器，安装了新版本的发布。这是通过运行 <tt class="docutils literal"><span class="pre">relup</span></tt> 中的指令来完成的。可能会添加、删除或者重新载入模块，启动、停止或重启应用等等。某些情况甚至需要重启整个虚拟器。
+如果安装失败了，系统可能被重启，然后自动使用旧的发布版。</li>
+<li>如果安装成功了，新版本会成为默认的版本，现在如果系统重启了，那么它会被自动使用。</li>
+</ol>
+<p>下一章 <a class="reference external" href="appup_cookbook.html#appup-cookbook"><em>Appup Cookbook</em></a> 包含了 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件的一些例子，是一些通常在运行时较容易处理的一些典型的升级、降级案例。但是，还有方方面面的因素会让发布处理变得很复杂。说一些例子：</p>
+<ul class="simple">
+<li>复杂的或者环形的依赖会导致很难甚至不可能确定升级或者降级的次序而不出现运行时错误。依赖可能是：<ul>
+<li>节点之间，</li>
+<li>进程之间和</li>
+<li>模块之间。</li>
+</ul>
+</li>
+<li>在发布处理过程中，未受影响的进程将继续正常的执行。这可能会导致超时或者其他问题。例如，在挂起使用某个模块的进程并载入该模块的新版本的时间窗口内，新的进程创建了，可能还在继续执行旧的代码。</li>
+</ul>
+<p>因此推荐以尽可能小的步骤变更代码，并且始终保持向后兼容。</p>
+</div>
+<div class="section" id="id3">
+<h2>要求<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>要让发布处理能正常运作，运行时系统需要知道目前正在运行哪个发布。它必须能（在运行时）更改系统如果重启后要使用的启动脚本的系统配置文件，例如在系统崩溃之后通过 <tt class="docutils literal"><span class="pre">heart</span></tt> 。因此，Erlang必须作为一个嵌入式系统启动，更多信息请参考<strong>嵌入式系统</strong>。</p>
+<p>为了让系统重启能正确运行，系统启动还必须启用心跳监控，请参见 <tt class="docutils literal"><span class="pre">erl(1)</span></tt> 和 <tt class="docutils literal"><span class="pre">heart(3)</span></tt> 。</p>
+<p>其他要求：</p>
+<ul class="simple">
+<li>包含在发布包中的启动脚本必须是从发布包自身的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 生成得来的。
+在升级或降级的执行过程中，关于应用的信息都是从该脚本获得的。</li>
+<li>系统必须使用且仅用一个系统配置文件，名叫 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 。
+如果存在，那么创建发布包的时候会自动包含该文件。</li>
+<li>一个发布的所有版本，除了第一个，必须包含一个 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件。
+如果存在，那么创建发布包的时候会自动包含该文件。</li>
+</ul>
+</div>
+<div class="section" id="id4">
+<h2>分布式系统<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>如果系统包含若干个Erlang节点，每个节点可能在使用它自己版本的发布。发布版本是一个在本地注册的进程，并且当需要进行升级或者降级的时候，必须在每个节点上调用。还有一个发布处理指令可以用于在一系列节点上同步发布处理器进程： <tt class="docutils literal"><span class="pre">sync_nodes</span></tt> 。参见 <tt class="docutils literal"><span class="pre">appup(4)</span></tt> 。</p>
+</div>
+<div class="section" id="id5">
+<h2>发布处理指令<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>OTP支持一套<strong>发布处理指令</strong>（用在创建 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件的时候）。发布处理器可以理解该指令的一个子集——<strong>低级</strong>指令。为了让用户用得简单，还有一系列<strong>高级</strong>指令，可以通过 <tt class="docutils literal"><span class="pre">systools:make_relup</span></tt> 翻译为低级指令。</p>
+<p>这里将解释一些最常用的指令。指令的完整列表可以在 <tt class="docutils literal"><span class="pre">appup(4)</span></tt> 中找到。</p>
+<p>首先是一些定义：</p>
+<dl class="docutils">
+<dt><strong>驻留模块</strong></dt>
+<dd>该模块中有一个（或多个）属于某个进程的尾递归循环函数。如果尾递归循环函数是在多个模块中实现的，那么所有这些模块都是该进程的驻留模块。</dd>
+<dt><strong>功能模块</strong></dt>
+<dd>对任何进程都不是驻留模块的模块。</dd>
+</dl>
+<p>注意对于使用了OTP行为实现的进程，行为模块是该进程的驻留模块。回调模块是功能模块。</p>
+<div class="section" id="load-module">
+<h3>load_module<a class="headerlink" href="#load-module" title="Permalink to this headline">¶</a></h3>
+<p>如果对某个功能模块进行了简单的扩展，那么只要简单地将模块的新版本载入系统并删除就版本即可。这称之为<strong>简单代码替换</strong>，可以使用以下指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nb">load_module</span><span class="p">,</span> <span class="nv">Module</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="update">
+<h3>update<a class="headerlink" href="#update" title="Permalink to this headline">¶</a></h3>
+<p>如果进行了更加复杂的更改，例如对某个gen_server的内部状态的格式进行了更改，那么简单代码替换就不够了。这时需要挂起使用该模块的进程（防止其在代码替换完成之前再处理任何请求），并让他们转换内部状态的格式，并切换到模块的新版本上，删除旧版本，最后恢复进程。这称之为<strong>同步代码替换</strong>，它要用到以下指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="nv">Module</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="nv">Extra</span><span class="p">}}</span>
+<span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="nv">Module</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>当进行如上所述的变更行为的内部的状态时，要用到带有参数 <tt class="docutils literal"><span class="pre">{advanced,</span> <span class="pre">Extra}</span></tt> 的 <tt class="docutils literal"><span class="pre">update</span></tt> 。它会让行为进程调用回掉函数 <tt class="docutils literal"><span class="pre">code_change</span></tt> ，并将值 <tt class="docutils literal"><span class="pre">Extra</span></tt> 和其他一些信息作为参数传递给它。参见相应行为的手册和 <a class="reference external" href="appup_cookbook.html#appup-cookbook"><em>Appup Cookbook</em></a> 。</p>
+<p>当更改督程的启动规格的时候，要用到带有 <tt class="docutils literal"><span class="pre">supervisor</span></tt> 参数的 <tt class="docutils literal"><span class="pre">update</span></tt> 。参见 <a class="reference external" href="appup_cookbook.html#appup-cookbook"><em>Appup Cookbook</em></a> 。</p>
+<p>发布处理器通过遍历每个运行的应用的监督树并检查所有的子进程规格来查找<strong>使用</strong>某个模块的进程：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nv">Id</span><span class="p">,</span> <span class="nv">StartFunc</span><span class="p">,</span> <span class="nv">Restart</span><span class="p">,</span> <span class="nv">Shutdown</span><span class="p">,</span> <span class="nv">Type</span><span class="p">,</span> <span class="nv">Modules</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>如果某个模块的名字列在某个进程的子进程规格的 <tt class="docutils literal"><span class="pre">Modules</span></tt> 中，那么该进程在使用该模块。</p>
+<p>如果 <tt class="docutils literal"><span class="pre">Modules=dynamic</span></tt> ，即事件管理器的情况，那么事件管理器进程会告知发布处理器目前安装了的事件处理器（gen_fsm），然后检查是否模块名在这个列表中。</p>
+<p>发布处理器挂起进程、要求代码变更，并恢复进程是通过相应地调用 <tt class="docutils literal"><span class="pre">sys:suspend/1,2</span></tt> 、 <tt class="docutils literal"><span class="pre">sys:change_code/4,5</span></tt> 和 <tt class="docutils literal"><span class="pre">sys:resume/1,2</span></tt> 来完成的。</p>
+</div>
+<div class="section" id="add-module-delete-module">
+<h3>add_module 和 delete_module<a class="headerlink" href="#add-module-delete-module" title="Permalink to this headline">¶</a></h3>
+<p>如果引入了一个新的模块，可以使用以下代码：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">add_module</span><span class="p">,</span> <span class="nv">Module</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>该指令加载模块并在当Erlang运行于嵌入模式的时候是绝对必须的。当Erlang运行于交互模式（默认）时则并非严格要求，因为代码服务器会自动搜索并加载未加载的模块。</p>
+<p><tt class="docutils literal"><span class="pre">add_module</span></tt> 模块的对面就是 <tt class="docutils literal"><span class="pre">delete_module</span></tt> ，他用于卸载一个模块：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nb">delete_module</span><span class="p">,</span> <span class="nv">Module</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>注意在任何应用中的任何进程，当 <tt class="docutils literal"><span class="pre">Module</span></tt> 是驻留进程时，在运行指令的时候都会被杀死。因此用户必须确保在删除模块的时候所有这种进程必须终止，来避免出现督程失败重启的情况。</p>
+</div>
+<div class="section" id="id6">
+<h3>应用指令<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h3>
+<p>添加一个应用的指令为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">add_application</span><span class="p">,</span> <span class="nv">Application</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>添加一个应用表示由在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的 <tt class="docutils literal"><span class="pre">modules</span></tt> 键定义的模块已经使用了一系列 <tt class="docutils literal"><span class="pre">add_module</span></tt> 指令加载了，然后该应用被启动。</p>
+<p>移除一个应用的指令为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">remove_application</span><span class="p">,</span> <span class="nv">Application</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>移除一个应用表示该应用被停止，并使用一系列 <tt class="docutils literal"><span class="pre">delete_module</span></tt> 指令将模块都卸载，然后该应用规格从应用控制器中被卸载。</p>
+<p>重启一个应用的指令为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">restart_application</span><span class="p">,</span> <span class="nv">Application</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>重启一个应用表示该应用被停止，然后再启动，类似于先使用 <tt class="docutils literal"><span class="pre">remove_application</span></tt> 再使用 <tt class="docutils literal"><span class="pre">add_application</span></tt> 。</p>
+</div>
+<div class="section" id="apply">
+<h3>apply（低级）<a class="headerlink" href="#apply" title="Permalink to this headline">¶</a></h3>
+<p>要从发布处理器中调用任意函数，可以使用以下指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="nv">M</span><span class="p">,</span> <span class="nv">F</span><span class="p">,</span> <span class="nv">A</span><span class="p">}}</span>
+</pre></div>
+</div>
+<p>这样发布处理器会执行 <tt class="docutils literal"><span class="pre">apply(M,</span> <span class="pre">F,</span> <span class="pre">A)</span></tt> 。</p>
+</div>
+<div class="section" id="restart-new-emulator">
+<h3>restart_new_emulator（低级）<a class="headerlink" href="#restart-new-emulator" title="Permalink to this headline">¶</a></h3>
+<p>该指令用于当变更到一个新的模拟器版本上，或者由于某种其他原因需要进行系统重启。要求该系统必须启用了心跳监控，参见 <tt class="docutils literal"><span class="pre">erl(1)</span></tt> 和 <tt class="docutils literal"><span class="pre">heart(3)</span></tt> 。</p>
+<p>当发布处理器遇到该指令时，他通过调用 <tt class="docutils literal"><span class="pre">init:reboot()</span></tt> 关闭当前的模拟器，参见 <tt class="docutils literal"><span class="pre">init(3)</span></tt> 。所有的进程都被优雅地停止然后系统可以通过心脏程序重启，并使用新的发布版本。当新的模拟器版本启动并运行后，这个新的版本必须被设置为固定的。否则，如果系统又重启了则会使用旧的版本。</p>
+<p>在UNIX上，发布处理器会告诉心脏程序使用哪个版本重启系统。注意环境变量 <tt class="docutils literal"><span class="pre">HEART_COMMAND</span></tt> ，通常由心脏程序使用，在这个案例中是被忽略的。这个命令默认是 <tt class="docutils literal"><span class="pre">$ROOT/bin/start</span></tt> 。还可以使用SASL配置参数 <tt class="docutils literal"><span class="pre">start_prg</span></tt> 来设置另一个命令，参见 <tt class="docutils literal"><span class="pre">sasl(6)</span></tt> 。</p>
+</div>
+</div>
+<div class="section" id="id7">
+<h2>应用升级文件<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h2>
+<p>要定义如何在应用的当前和上一版本之间进行升级和降级，我们要创建一个<strong>应用升级文件</strong>，简称 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件。该文件必须被命名为 <tt class="docutils literal"><span class="pre">Application.appup</span></tt> ，其中 <tt class="docutils literal"><span class="pre">Application</span></tt> 是应用的名称：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nv">Vsn</span><span class="p">,</span>
+ <span class="p">[{</span><span class="nv">UpFromVsn1</span><span class="p">,</span> <span class="nv">InstructionsU1</span><span class="p">},</span>
+  <span class="p">...,</span>
+  <span class="p">{</span><span class="nv">UpFromVsnK</span><span class="p">,</span> <span class="nv">InstructionsUK</span><span class="p">}],</span>
+ <span class="p">[{</span><span class="nv">DownToVsn1</span><span class="p">,</span> <span class="nv">InstructionsD1</span><span class="p">},</span>
+  <span class="p">...,</span>
+  <span class="p">{</span><span class="nv">DownToVsnK</span><span class="p">,</span> <span class="nv">InstructionsDK</span><span class="p">}]}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Vsn</span></tt> 是一个字符串表示应用当前的版本，和定义在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的一样。每个 <tt class="docutils literal"><span class="pre">UpFromVsn</span></tt> 是要从应用的哪个版本升级上来，每个 <tt class="docutils literal"><span class="pre">DownToVsn</span></tt> 是应用要降级至的版本。每个 <tt class="docutils literal"><span class="pre">Instructions</span></tt> 是一个发布处理指令的列表。</p>
+<p><tt class="docutils literal"><span class="pre">appup</span></tt> 文件的语法和内容在 <tt class="docutils literal"><span class="pre">appup(4)</span></tt> 中有详细的描述。</p>
+<p>在 <a class="reference external" href="appup_cookbook.html#appup-cookbook"><em>Appup Cookbook</em></a> 中，给出了典型升级/降级案例的 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件范例。</p>
+<p>例如：想一下来自 <a class="reference external" href="releases.html#releases"><em>发布</em></a> 一章的发布 <tt class="docutils literal"><span class="pre">ch_rel-1</span></tt> 。假设我们要给服务器 <tt class="docutils literal"><span class="pre">ch3</span></tt> 添加一个函数 <tt class="docutils literal"><span class="pre">available/0</span></tt> ，它返回可用的频道的数量：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch3</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">gen_server</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start_link</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">alloc</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="n">free</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">available</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">,</span> <span class="n">handle_call</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="n">handle_cast</span><span class="o">/</span><span class="mi">2</span><span class="p">]).</span>
+
+<span class="nf">start_link</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">start_link</span><span class="p">({</span><span class="n">local</span><span class="p">,</span> <span class="n">ch3</span><span class="p">},</span> <span class="n">ch3</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[]).</span>
+
+<span class="nf">alloc</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">call</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="n">alloc</span><span class="p">).</span>
+
+<span class="nf">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">cast</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">}).</span>
+
+<span class="nf">available</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="n">call</span><span class="p">(</span><span class="n">ch3</span><span class="p">,</span> <span class="n">available</span><span class="p">).</span>
+
+<span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="n">channels</span><span class="p">()}.</span>
+
+<span class="nf">handle_call</span><span class="p">(</span><span class="n">alloc</span><span class="p">,</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}</span> <span class="o">=</span> <span class="n">alloc</span><span class="p">(</span><span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">reply</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">};</span>
+<span class="nf">handle_call</span><span class="p">(</span><span class="n">available</span><span class="p">,</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">N</span> <span class="o">=</span> <span class="n">available</span><span class="p">(</span><span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">reply</span><span class="p">,</span> <span class="nv">N</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">}.</span>
+
+<span class="nf">handle_cast</span><span class="p">({</span><span class="n">free</span><span class="p">,</span> <span class="nv">Ch</span><span class="p">},</span> <span class="nv">Chs</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Chs2</span> <span class="o">=</span> <span class="n">free</span><span class="p">(</span><span class="nv">Ch</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">),</span>
+    <span class="p">{</span><span class="n">noreply</span><span class="p">,</span> <span class="nv">Chs2</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>现在必须创建一个新版本的 <tt class="docutils literal"><span class="pre">ch_app.app</span></tt> 文件，其中版本号更新了：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">,</span>
+ <span class="p">[{</span><span class="n">description</span><span class="p">,</span> <span class="s">&quot;Channel allocator&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">vsn</span><span class="p">,</span> <span class="s">&quot;2&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">modules</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_app</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">registered</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">applications</span><span class="p">,</span> <span class="p">[</span><span class="n">kernel</span><span class="p">,</span> <span class="n">stdlib</span><span class="p">,</span> <span class="n">sasl</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">mod</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_app</span><span class="p">,[]}}</span>
+ <span class="p">]}.</span>
+</pre></div>
+</div>
+<p>要将 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 从“``1``”升级到“``2``”（以及从“``2``”降级到“``1``”），我们只需要载入新（或旧） 版本的 <tt class="docutils literal"><span class="pre">ch3</span></tt> 回调模块。我们在 <tt class="docutils literal"><span class="pre">ebin</span></tt> 目录下创建了应用升级文件 <tt class="docutils literal"><span class="pre">ch_pp.appup</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id8">
+<h2>发布升级文件<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h2>
+<p>要定义如何在某个发布的新旧版本之间进行升级和降级，我们要创建一个<strong>发布升级文件</strong>，或简称 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件。</p>
+<p>该文件无须手工创建，可以使用 <tt class="docutils literal"><span class="pre">systools:make_relup/3,4</span></tt> 进行生成。使用相关版本的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 、 <tt class="docutils literal"><span class="pre">.app</span></tt> 和 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件作为输入。除去了哪些应用应该被添加或者删除和哪些应用应该被升级或降级。它的指令都是从 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件中获得并按照正确的顺序转换成单独的一个低级指令的列表。</p>
+<p><tt class="docutils literal"><span class="pre">relup</span></tt> 文件相对简单，可以被手工创建。但记住它只能包含低级指令。</p>
+<p>发布升级文件的语法和内容在 <tt class="docutils literal"><span class="pre">relup(4)</span></tt> 中有详细的阐述。</p>
+<p>例如，继续前一节的例子。我们有一个 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的新版本“2”和一个 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件。我们还需要一个 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件的新版本。这时该文件叫做 <tt class="docutils literal"><span class="pre">ch_rel-2.rel</span></tt>  发布版本串由“A”改成了“B”：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">release</span><span class="p">,</span>
+ <span class="p">{</span><span class="s">&quot;ch_rel&quot;</span><span class="p">,</span> <span class="s">&quot;B&quot;</span><span class="p">},</span>
+ <span class="p">{</span><span class="n">erts</span><span class="p">,</span> <span class="s">&quot;5.3&quot;</span><span class="p">},</span>
+ <span class="p">[{</span><span class="n">kernel</span><span class="p">,</span> <span class="s">&quot;2.9&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">stdlib</span><span class="p">,</span> <span class="s">&quot;1.12&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">sasl</span><span class="p">,</span> <span class="s">&quot;1.10&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">ch_app</span><span class="p">,</span> <span class="s">&quot;2&quot;</span><span class="p">}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>现在可以生成 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件了：</p>
+<div class="highlight-python"><pre>1&gt; systools:make_relup("ch_rel-2", ["ch_rel-1"], ["ch_rel-1"]).
+ok</pre>
+</div>
+<p>会生成一个 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件，它包含了如何从版本“A”（“ch_rel-1”）升级到版本“B”（“ch_rel-2”）的指令，以及如何从版本“B”降级到版本“A”的指令。</p>
+<p>注意旧的和新的版本的 <tt class="docutils literal"><span class="pre">.app</span></tt> 和 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件必须在代码路径中， <tt class="docutils literal"><span class="pre">.appup</span></tt> 和（新的） <tt class="docutils literal"><span class="pre">.beam</span></tt> 文件也必须是。它还可以通过参数 <tt class="docutils literal"><span class="pre">path</span></tt> 扩展代码路径：</p>
+<div class="highlight-python"><pre>1&gt; systools:make_relup("ch_rel-2", ["ch_rel-1"], ["ch_rel-1"],
+[{path,["../ch_rel-1",
+"../ch_rel-1/lib/ch_app-1/ebin"]}]).
+ok</pre>
+</div>
+</div>
+<div class="section" id="id9">
+<h2>安装一个发布<a class="headerlink" href="#id9" title="Permalink to this headline">¶</a></h2>
+<p>当我们完成了一个发布的新版本，然后就可以用这个新版本创建一个发布包并传输到目标环境中。</p>
+<p>要在运行时安装新版本的发布，得用到<strong>发布处理器</strong>。它是属于SASL应用的一个进程，负责发布包的解包、安装和移除。它通过模块 <tt class="docutils literal"><span class="pre">release_handler</span></tt> 暴露了借口，在 <tt class="docutils literal"><span class="pre">release_handler(3)</span></tt> 中有详细阐述。</p>
+<p>机设有一个正在运行的目标系统，安装根目录是 <tt class="docutils literal"><span class="pre">$ROOT</span></tt> ，包含发布新版本的发布包应被复制到 <tt class="docutils literal"><span class="pre">$ROOT/releases</span></tt> 中。</p>
+<p>第一个动作是先<strong>解开</strong>发布包，然后文件从包中被释放出来：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nn">release_handler</span><span class="p">:</span><span class="n">unpack_release</span><span class="p">(</span><span class="nv">ReleaseName</span><span class="p">)</span> <span class="o">=&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Vsn</span><span class="p">}</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">ReleaseName</span></tt> 是发布包去掉 <tt class="docutils literal"><span class="pre">.tar.gz</span></tt> 扩展之后的名字。 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 是被解开的发布的版本，和在 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件中定义的一样。</p>
+<p>然后会创建一个 <tt class="docutils literal"><span class="pre">$ROOT/lib/releases/Vsn</span></tt> ，其中有 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件、启动脚本 <tt class="docutils literal"><span class="pre">start.boot</span></tt> 、系统配置文件 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 以及 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件。对于有新版本号的应用，应用目录会被放在 <tt class="docutils literal"><span class="pre">$ROOT/lib</span></tt> 下。未更改的应用不受影响。</p>
+<p>解开的发布可以被<strong>安装</strong>。然后发布处理器会一条条执行在 <tt class="docutils literal"><span class="pre">relup</span></tt> 中指令：</p>
+<div class="highlight-python"><pre>release_handler:install_release(Vsn) =&gt; {ok, FromVsn, []}</pre>
+</div>
+<p>如果在安装过程中出现了错误，那么系统会使用老版本的发布重新启动。如果安装成功了，系统以后就会使用新版本的发布，但是一旦出了状况系统重启了，那么还是会使用前一个版本进行启动。为了能成为默认版本，新安装的发布必须被设为<strong>持久</strong>（permanent）的，也就是说前一个版本变成<strong>旧的</strong>了：</p>
+<div class="highlight-python"><pre>release_handler:make_permanent(Vsn) =&gt; ok</pre>
+</div>
+<p>系统将哪个版本是旧的哪个是持久的信息保存在文件 <tt class="docutils literal"><span class="pre">$ROOT/releases/RELEASES</span></tt> 和 <tt class="docutils literal"><span class="pre">$ROOT/releases/start_erl.data</span></tt> 。</p>
+<p>要从 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 降级至 <tt class="docutils literal"><span class="pre">FromVsn</span></tt> ，必须再次调用 <tt class="docutils literal"><span class="pre">install_release</span></tt> ：</p>
+<div class="highlight-python"><pre>release_handler:install_release(Vsn) =&gt; {ok, FromVsn, []}</pre>
+</div>
+<p>一个安装了，但是并非持久的发布可以被<strong>移除</strong>。然后关于该发布的信息会从 <tt class="docutils literal"><span class="pre">$ROOT/releases/RELEASES</span></tt> 中被删除，同时该发布指定的代码，也就是新的应用的目录和 <tt class="docutils literal"><span class="pre">$ROOT/releases/Vsn</span></tt> 目录都会被删除。</p>
+<p>接着前一节的例子：</p>
+<ol class="arabic simple">
+<li>按照<strong>系统原理</strong>中所描述的创建一个目标系统，包含来自 <a class="reference external" href="releases.html#releases"><em>发布</em></a> 一章的 <tt class="docutils literal"><span class="pre">ch_rel</span></tt> 的第一个版本“A”。这次必须在发布包中包含 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 。如果不需要任何配置，该文件应该包含空列表：</li>
+</ol>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">[].</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li>作为一个简单的目标系统启动。注意实际中，它要作为一个嵌入式系统启动。不过，用正确的启动脚本以及 <tt class="docutils literal"><span class="pre">.config</span></tt> 文件启动 <tt class="docutils literal"><span class="pre">erl</span></tt> 对于描述我们的目的已经足够了：</li>
+</ol>
+<div class="highlight-python"><pre>% cd $ROOT
+% bin/erl -boot $ROOT/releases/A/start -config $ROOT/releases/A/sys
+...</pre>
+</div>
+<ol class="arabic simple" start="3">
+<li>在另一个Erlang shell中，为新版本“B”生成启动脚本并创建发布包。记住要包含（一个可能更新过的） <tt class="docutils literal"><span class="pre">sys.config</span></tt> 文件和 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件，参见之前的 <a class="reference internal" href="#id8">发布升级文件</a> 。</li>
+</ol>
+<div class="highlight-python"><pre>1&gt; systools:make_script("ch_rel-2").
+ok
+2&gt; systools:make_tar("ch_rel-2").
+ok</pre>
+</div>
+<p>现在新的发布包包含了 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的版本“2”和 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件：</p>
+<div class="highlight-python"><pre>% tar tf ch_rel-2.tar
+lib/kernel-2.9/ebin/kernel.app
+lib/kernel-2.9/ebin/application.beam
+...
+lib/stdlib-1.12/ebin/stdlib.app
+lib/stdlib-1.12/ebin/beam_lib.beam
+...
+lib/sasl-1.10/ebin/sasl.app
+lib/sasl-1.10/ebin/sasl.beam
+...
+lib/ch_app-2/ebin/ch_app.app
+lib/ch_app-2/ebin/ch_app.beam
+lib/ch_app-2/ebin/ch_sup.beam
+lib/ch_app-2/ebin/ch3.beam
+releases/B/start.boot
+releases/B/relup
+releases/B/sys.config
+releases/ch_rel-2.rel</pre>
+</div>
+<ol class="arabic simple" start="4">
+<li>将发布包 <tt class="docutils literal"><span class="pre">ch_rel-2.tar.gz</span></tt> 复制到 <tt class="docutils literal"><span class="pre">$ROOT/releases</span></tt> 目录中。</li>
+<li>在运行中的目标系统上，解开发布包：</li>
+</ol>
+<div class="highlight-python"><pre>1&gt; release_handler:unpack_release("ch_rel-2").
+{ok,"B"}</pre>
+</div>
+<p>新应用版本 <tt class="docutils literal"><span class="pre">ch_app-2</span></tt> 被安装在 <tt class="docutils literal"><span class="pre">$ROOT/lib</span></tt> 中，就在 <tt class="docutils literal"><span class="pre">ch_app-1</span></tt> 旁边。 <tt class="docutils literal"><span class="pre">kernel</span></tt> 、 <tt class="docutils literal"><span class="pre">stdlib</span></tt> 和 <tt class="docutils literal"><span class="pre">sasl</span></tt> 目录没受影响，因为都没有做过更改。</p>
+<p>在 <tt class="docutils literal"><span class="pre">$ROOT/releases</span></tt> ，创建了一个新目录 <tt class="docutils literal"><span class="pre">B</span></tt> ，里面包含了 <tt class="docutils literal"><span class="pre">ch_rel-2.rel</span></tt> 、 <tt class="docutils literal"><span class="pre">start.boot</span></tt> 、 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 和 <tt class="docutils literal"><span class="pre">relup</span></tt> 。</p>
+<ol class="arabic simple" start="6">
+<li>检查函数 <tt class="docutils literal"><span class="pre">ch3:available/0</span></tt> 是否可用：</li>
+</ol>
+<div class="highlight-python"><pre>2&gt; ch3:available().
+** exception error: undefined function ch3:available/0</pre>
+</div>
+<ol class="arabic simple" start="7">
+<li>安装新的发布。执行 <tt class="docutils literal"><span class="pre">$ROOT/releases/B/relup</span></tt> 中的指令，最后新版本的 <tt class="docutils literal"><span class="pre">ch3</span></tt> 载入了。现在函数 <tt class="docutils literal"><span class="pre">ch3:available/0</span></tt> 就可用了：</li>
+</ol>
+<div class="highlight-python"><pre>3&gt; release_handler:install_release("B").
+{ok,"A",[]}
+4&gt; ch3:available().
+3
+5&gt; code:which(ch3).
+".../lib/ch_app-2/ebin/ch3.beam"
+6&gt; code:which(ch_sup).
+".../lib/ch_app-1/ebin/ch_sup.beam"</pre>
+</div>
+<p>在 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 中没有更新过代码的进程，例如督程，会继续执行 <tt class="docutils literal"><span class="pre">ch_app-1</span></tt> 中的代码。
+8. 如果目标系统现在重启了，它还会继续使用“A”。“B”版本必须设置为持久才能在系统重启之后被使用。</p>
+<div class="highlight-python"><pre>7&gt; release_handler:make_permanent("B").
+ok</pre>
+</div>
+</div>
+<div class="section" id="id10">
+<h2>更新应用规格<a class="headerlink" href="#id10" title="Permalink to this headline">¶</a></h2>
+<p>当安装了某个发布的新版本，应用规格会为所有应用进行自动更新。</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">关于新的应用规格的信息是从包含在发布包中的启动脚本中获得的。因此要确保启动脚本是由和用于构建发布包自身的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件是同一个。</p>
+</div>
+<p>特别是，应用配置参数会根据以下数据（优先级从低到高）自动更新：</p>
+<ol class="arabic simple">
+<li>在启动脚本中的数据，即从新的应用资源文件 <tt class="docutils literal"><span class="pre">App.app</span></tt> 中获得的</li>
+<li>新的 <tt class="docutils literal"><span class="pre">sys.config</span></tt></li>
+<li>命令行参数 <tt class="docutils literal"><span class="pre">-App</span> <span class="pre">Par</span> <span class="pre">Val</span></tt></li>
+</ol>
+<p>这还表示在其他系统配置文件中设置的参数值，包括使用 <tt class="docutils literal"><span class="pre">application:set_env/3</span></tt> 设置的值，都是不考虑的。</p>
+<p>当某个已安装的发布被设为持久的，系统进程 <tt class="docutils literal"><span class="pre">init</span></tt> 会设置指向新的 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 。</p>
+<p>在安装完成之后，应用控制器会为所有运行的应用比较新旧配置参数并调用以下回调函数：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nv">Module</span><span class="p">:</span><span class="n">config_change</span><span class="p">(</span><span class="nv">Changed</span><span class="p">,</span> <span class="nv">New</span><span class="p">,</span> <span class="nv">Removed</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">Module</span></tt> 是由 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中 <tt class="docutils literal"><span class="pre">mod</span></tt> 所定义的应用回调模块。 <tt class="docutils literal"><span class="pre">Changed</span></tt> 和 <tt class="docutils literal"><span class="pre">New</span></tt> 是 <tt class="docutils literal"><span class="pre">{Par,Val}</span></tt> 的列表，分别对应所有更改的和添加的配置参数。 <tt class="docutils literal"><span class="pre">Removed</span></tt> 是所有被删除的参数 <tt class="docutils literal"><span class="pre">Par</span></tt> 的列表。</p>
+<p>该函数是可选的，在实现应用回调模块时可以忽略。</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">发布处理</a><ul>
+<li><a class="reference external" href="#id2">发布处理原理</a></li>
+<li><a class="reference external" href="#id3">要求</a></li>
+<li><a class="reference external" href="#id4">分布式系统</a></li>
+<li><a class="reference external" href="#id5">发布处理指令</a><ul>
+<li><a class="reference external" href="#load-module">load_module</a></li>
+<li><a class="reference external" href="#update">update</a></li>
+<li><a class="reference external" href="#add-module-delete-module">add_module 和 delete_module</a></li>
+<li><a class="reference external" href="#id6">应用指令</a></li>
+<li><a class="reference external" href="#apply">apply（低级）</a></li>
+<li><a class="reference external" href="#restart-new-emulator">restart_new_emulator（低级）</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#id7">应用升级文件</a></li>
+<li><a class="reference external" href="#id8">发布升级文件</a></li>
+<li><a class="reference external" href="#id9">安装一个发布</a></li>
+<li><a class="reference external" href="#id10">更新应用规格</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="releases.html" title="previous chapter">发布</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="appup_cookbook.html" title="next chapter">Appup Cookbook</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/release_handling.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="appup_cookbook.html" title="Appup Cookbook"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="releases.html" title="发布"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 02, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

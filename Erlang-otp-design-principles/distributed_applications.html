@@ -1,0 +1,192 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>分布式应用 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="发布" href="releases.html" />
+    <link rel="prev" title="被包含的应用" href="included_applications.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="releases.html" title="发布"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="included_applications.html" title="被包含的应用"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="distributed-applications"></span><h1>分布式应用<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="id2">
+<h2>定义<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>在一个包含了若干Erlang节点的分布式系统中，可能需要以分布的方法来控制应用。如果某个节点——上面运行了某个应用——挂了，应用要在另一个节点上被重启。</p>
+<p>这样一个应用被称之为一个<strong>分布式应用</strong>。注意是对于应用的控制是分布的，所有应用当然都可以是分布——比如，使用其它节点上的服务。</p>
+<p>因为一个分布式应用可能会在节点之间移动，所以必须有某种寻址机制来确保它可以被其他应用找到，无论它当前运行于哪个节点上。这里不会讨论这个问题，Kernel模块 <tt class="docutils literal"><span class="pre">global</span></tt> 和STDLIB模块 <tt class="docutils literal"><span class="pre">pg</span></tt> 都可以用于这个目的。</p>
+</div>
+<div class="section" id="id3">
+<h2>指定分布式应用<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>分布式应用同时由应用控制器和一个分布式应用控制进程 <tt class="docutils literal"><span class="pre">dist_ac</span></tt> 来控制。这些进程都是 <tt class="docutils literal"><span class="pre">kernel</span></tt> 应用的一部分。因此，分布式应用要通过配置 <tt class="docutils literal"><span class="pre">kernel</span></tt> 应用来指定，使用以下配置参数（参见 <tt class="docutils literal"><span class="pre">kernel(6)</span></tt> ）：</p>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">distributed</span> <span class="pre">=</span> <span class="pre">[{Application,</span> <span class="pre">[Timeout,]</span> <span class="pre">NodeDesc}]</span></tt></dt>
+<dd>指定应用 <tt class="docutils literal"><span class="pre">Application</span> <span class="pre">=</span> <span class="pre">atom()</span></tt> 可以在何处执行。 <tt class="docutils literal"><span class="pre">NodeDesc</span> <span class="pre">=</span> <span class="pre">[Node</span> <span class="pre">|</span> <span class="pre">{Node,...,Node}]</span></tt> 是节点名称的列表，按照优先级顺序排列。在一个元组内的节点的优先级则是不确定的。
+<tt class="docutils literal"><span class="pre">Time</span> <span class="pre">=</span> <span class="pre">integer()</span></tt> 指定了在另一个节点上重启应用之前要等待多少毫秒。</dd>
+</dl>
+<p>为了应用控制的分布能正常工作，分布式应用所运行的节点必须互相联系并商定在何处启动应用。这是使用以下 <tt class="docutils literal"><span class="pre">kernel</span></tt> 配置参数来完成的：</p>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">sync_nodes_mandatory</span> <span class="pre">=</span> <span class="pre">[Node]</span></tt></dt>
+<dd>指定哪些其他的节点必须被启动（在 <tt class="docutils literal"><span class="pre">sync_nodes_timeout</span></tt> 指定的超时时间之内）</dd>
+<dt><tt class="docutils literal"><span class="pre">sync_nodes_optional</span> <span class="pre">=</span> <span class="pre">[Node]</span></tt></dt>
+<dd>指定哪些其他的节点可以被启动（在 <tt class="docutils literal"><span class="pre">sync_nodes_timeout</span></tt> 指定的超时时间之内）</dd>
+<dt><tt class="docutils literal"><span class="pre">sync_nodes_timeout</span> <span class="pre">=</span> <span class="pre">integer()</span> <span class="pre">|</span> <span class="pre">infinity</span></tt></dt>
+<dd>指定在其他节点启动之前等待多少毫秒</dd>
+</dl>
+<p>当启动之后，节点要等待所有由 <tt class="docutils literal"><span class="pre">sync_nodes_mandatory</span></tt> 和 <tt class="docutils literal"><span class="pre">sync_nodes_optional</span></tt> 指定的节点就绪。当所有节点就绪，或者当所有强制的节点就绪同时已经经过由 <tt class="docutils literal"><span class="pre">sync_nodes_timeout</span></tt> 指定的时间，然后所有的应用将被启动。如果不是所有的强制节点都就绪了，那么这个节点就会终止。</p>
+<p>例如：一个应用 <tt class="docutils literal"><span class="pre">myapp</span></tt> 应该运行于节点 <tt class="docutils literal"><span class="pre">cp1&#64;cave</span></tt> 上。如果该节点挂了，那么 <tt class="docutils literal"><span class="pre">myapp</span></tt> 应该在 <tt class="docutils literal"><span class="pre">cp2&#64;cave</span></tt> 或者 <tt class="docutils literal"><span class="pre">cp3&#64;cave</span></tt> 上重启。那么针对 <tt class="docutils literal"><span class="pre">cp1&#64;cave</span></tt> 的一个系统配置文件应该为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">[{</span><span class="n">kernel</span><span class="p">,</span>
+  <span class="p">[{</span><span class="n">distributed</span><span class="p">,</span> <span class="p">[{</span><span class="n">myapp</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="p">[</span><span class="n">cp1</span><span class="p">@</span><span class="n">cave</span><span class="p">,</span> <span class="p">{</span><span class="n">cp2</span><span class="p">@</span><span class="n">cave</span><span class="p">,</span> <span class="n">cp3</span><span class="p">@</span><span class="n">cave</span><span class="p">}]}]},</span>
+   <span class="p">{</span><span class="n">sync_nodes_mandatory</span><span class="p">,</span> <span class="p">[</span><span class="n">cp2</span><span class="p">@</span><span class="n">cave</span><span class="p">,</span> <span class="n">cp3</span><span class="p">@</span><span class="n">cave</span><span class="p">]},</span>
+   <span class="p">{</span><span class="n">sync_nodes_timeout</span><span class="p">,</span> <span class="mi">5000</span><span class="p">}</span>
+  <span class="p">]</span>
+ <span class="p">}</span>
+<span class="p">].</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">cp2&#64;cave</span></tt> 和 <tt class="docutils literal"><span class="pre">cp3&#64;cave</span></tt> 的系统配置文件是一样的，除了强制节点的列表，对于 <tt class="docutils literal"><span class="pre">cp2&#64;cave</span></tt> 来说应该是 <tt class="docutils literal"><span class="pre">[cp1&#64;cave,</span> <span class="pre">cp3&#64;cave]</span></tt> ，对于 <tt class="docutils literal"><span class="pre">cp3&#64;cave</span></tt> 来说应该是 <tt class="docutils literal"><span class="pre">[cp1&#64;cave,</span> <span class="pre">cp2&#64;cave]</span></tt> 。</p>
+</div>
+<div class="section" id="id4">
+<h2>启动和停止分布式应用<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>当所有参与的（强制）节点启动后，就可以<strong>在所有这些节点上</strong>调用 <tt class="docutils literal"><span class="pre">application:start(Application)</span></tt> 来启动分布式应用。</p>
+<p>当然也可以用启动脚本（参见 <a class="reference external" href="releases.html#releases"><em>发布</em></a> ）自动启动应用。</p>
+<p>应用会在第一个——由 <tt class="docutils literal"><span class="pre">distributed</span></tt> 配置参数指定的、已经启动并运行的——节点上启动。应用按正常的方式启动。也就是说，创建了应用主程序并调用了应用回调函数：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nv">Module</span><span class="p">:</span><span class="n">start</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="nv">StartArgs</span><span class="p">).</span>
+</pre></div>
+</div>
+<p>例如：继续前一节的例子，三个节点都启动了，并指定了以下系统配置文件：</p>
+<div class="highlight-python"><pre>&gt; erl -sname cp1 -config cp1
+&gt; erl -sname cp2 -config cp2
+&gt; erl -sname cp3 -config cp3</pre>
+</div>
+<p>当所有的节点都起来并运行了，就可以启动 <tt class="docutils literal"><span class="pre">myapp</span></tt> 了。这是通过在所有三个节点上调用 <tt class="docutils literal"><span class="pre">application:start(myapp)</span></tt> 来完成的。然后，它被启动于 <tt class="docutils literal"><span class="pre">cp1</span></tt> 上，如下图所示。</p>
+<img alt="_images/dist1.gif" src="_images/dist1.gif" />
+<p>类似地，应用必须通过在所有相关节点上调用 <tt class="docutils literal"><span class="pre">application:stop(Application)</span></tt> 来停止应用。</p>
+</div>
+<div class="section" id="id5">
+<h2>故障转移<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>如果运行应用的节点挂了，应用会在指定的超时之后被重启，于由 <tt class="docutils literal"><span class="pre">distributed</span></tt> 配置参数指定的第一个启动且运行的节点。这个过程称之为<strong>故障转移</strong>(Failover)。</p>
+<p>应用会以正常的方式在新节点上启动，也就是，通过应用主程序调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nv">Module</span><span class="p">:</span><span class="n">start</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="nv">StartArgs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>注意特例：如果应用定义了 <tt class="docutils literal"><span class="pre">start_phases</span></tt> 键（参见 <a class="reference external" href="included_applications.html#included-applications"><em>被包含的应用</em></a> ），那么应用要另外使用以下调用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nv">Module</span><span class="p">:</span><span class="n">start</span><span class="p">({</span><span class="n">failover</span><span class="p">,</span> <span class="nv">Node</span><span class="p">},</span> <span class="nv">StartArgs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>其中 <tt class="docutils literal"><span class="pre">Node</span></tt> 是被终止的节点。</p>
+<p>例子：如果 <tt class="docutils literal"><span class="pre">cp1</span></tt> 挂了，然后系统检查其他节点—— <tt class="docutils literal"><span class="pre">cp2</span></tt> 或 <tt class="docutils literal"><span class="pre">cp3</span></tt> ——哪个运行的应用数最少，但还要等待5秒钟让 <tt class="docutils literal"><span class="pre">cp1</span></tt> 重启。如果 <tt class="docutils literal"><span class="pre">cp1</span></tt> 没有重启，同时 <tt class="docutils literal"><span class="pre">cp2</span></tt> 运行的应用比 <tt class="docutils literal"><span class="pre">cp3</span></tt> 少，那么 <tt class="docutils literal"><span class="pre">myapp</span></tt> 则会在 <tt class="docutils literal"><span class="pre">cp2</span></tt> 上重启。</p>
+<img alt="_images/dist2.gif" src="_images/dist2.gif" />
+<p>假设现在 <tt class="docutils literal"><span class="pre">cp2</span></tt> 也挂了并在5秒内没有重启。那么现在 <tt class="docutils literal"><span class="pre">myapp</span></tt> 会在 <tt class="docutils literal"><span class="pre">cp3</span></tt> 上重启。</p>
+<img alt="_images/dist3.gif" src="_images/dist3.gif" />
+</div>
+<div class="section" id="id6">
+<h2>接管<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p>如果一个节点启动了，根据 <tt class="docutils literal"><span class="pre">distributed</span></tt> ，它有着比分布式应用当前所运行的节点更高的优先级，那么应用首先会在新的节点重启，并在老的节点停止。这个过程称之为<strong>接管</strong>。</p>
+<p>这种情况是通过以下应用主程序调用来启动应用的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nv">Module</span><span class="p">:</span><span class="n">start</span><span class="p">({</span><span class="n">takeover</span><span class="p">,</span> <span class="nv">Node</span><span class="p">},</span> <span class="nv">StartArgs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>其中 <tt class="docutils literal"><span class="pre">Node</span></tt> 是老节点。</p>
+<p>例如：如果 <tt class="docutils literal"><span class="pre">myapp</span></tt> 目前运行在 <tt class="docutils literal"><span class="pre">cp3</span></tt> ，现在如果 <tt class="docutils literal"><span class="pre">cp2</span></tt> 重启了，那么它不会重启 <tt class="docutils literal"><span class="pre">myapp</span></tt> ，因为节点 <tt class="docutils literal"><span class="pre">cp2</span></tt> 和 <tt class="docutils literal"><span class="pre">cp3</span></tt> 之间的次序是不确定的。</p>
+<img alt="_images/dist4.gif" src="_images/dist4.gif" />
+<p>然而，如果 <tt class="docutils literal"><span class="pre">cp1</span></tt> 也重启了， 函数 <tt class="docutils literal"><span class="pre">application:takeover/2</span></tt> 会将 <tt class="docutils literal"><span class="pre">myapp</span></tt> 移动到 <tt class="docutils literal"><span class="pre">cp1</span></tt> ，因为 <tt class="docutils literal"><span class="pre">cp1</span></tt> 对此应用的优先级比 <tt class="docutils literal"><span class="pre">cp3</span></tt> 要高。在这种情况下，会在 <tt class="docutils literal"><span class="pre">cp1</span></tt> 执行 <tt class="docutils literal"><span class="pre">Module:start({takeover,</span> <span class="pre">cp3&#64;cave},</span> <span class="pre">StartArgs)</span></tt> 来启动该应用。</p>
+<img alt="_images/dist5.gif" src="_images/dist5.gif" />
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">分布式应用</a><ul>
+<li><a class="reference external" href="#id2">定义</a></li>
+<li><a class="reference external" href="#id3">指定分布式应用</a></li>
+<li><a class="reference external" href="#id4">启动和停止分布式应用</a></li>
+<li><a class="reference external" href="#id5">故障转移</a></li>
+<li><a class="reference external" href="#id6">接管</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="included_applications.html" title="previous chapter">被包含的应用</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="releases.html" title="next chapter">发布</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/distributed_applications.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="releases.html" title="发布"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="included_applications.html" title="被包含的应用"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 02, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,174 @@
+.. _gen_event:
+
+Gen_Event行为
+=============
+
+本章应和 :manpage:`gen_event(3)` 相结合阅读，它包含了所有接口函数和回调函数的详细说明。
+
+事件处理原理
+------------
+在OTP中， **事件管理器** （事件管理器）是一个命名对象，可以给其发送事件。一个 **事件** （event）可以是诸如一个错误、一个警报或者是某种应被记录的信息。
+
+在事件管理器中，可以安装零个、一个或者多个 **事件处理器** （事件处理器）。当事件管理器被通知有一个事件时，所有安装了的事件处理器都会来处理该事件。例如，一个处理错误的事件管理器可以默认安装了一个将错误消息打印到终端的处理器。如果在某个特定期间，错误消息也要被保存到一个文件中，那么用户可以添加另外一个做这个事情的事件处理器。当不再需要记录到文件时，该事件处理器就会被删除。
+
+一个事件管理器实现为一个进程，而每个事件处理器则实现为一个回调模块。
+
+事件管理器本质上是在维护一个 ``{Module, State}`` 对的列表，其中每个 ``Module`` 是一个事件处理器， ``State`` 是事件处理器的内部状态。
+
+例子
+----
+
+将错误消息输出到终端的事件处理器的回调模块可以这样写：
+
+.. code-block:: erlang
+
+    -module(terminal_logger).
+    -behaviour(gen_event).
+
+    -export([init/1, handle_event/2, terminate/2]).
+
+    init(_Args) ->
+        {ok, []}.
+
+    handle_event(ErrorMsg, State) ->
+        io:format("***Error*** ~p~n", [ErrorMsg]),
+        {ok, State}.
+
+    terminate(_Args, _State) ->
+        ok.
+
+
+将错误消息写入到文件的事件处理器的回调模块可以是：
+
+.. code-block:: erlang
+
+    -module(file_logger).
+    -behaviour(gen_event).
+
+    -export([init/1, handle_event/2, terminate/2]).
+
+    init(File) ->
+        {ok, Fd} = file:open(File, read),
+        {ok, Fd}.
+
+    handle_event(ErrorMsg, Fd) ->
+        io:format(Fd, "***Error*** ~p~n", [ErrorMsg]),
+        {ok, Fd}.
+
+    terminate(_Args, Fd) ->
+        file:close(Fd).
+
+这些代码将在下一节中解释。
+
+启动一个事件管理器
+------------------
+要启动上面例子中描述的处理错误的事件管理器，可以调用如下方法：
+
+.. code-block:: erlang
+
+    gen_event:start_link({local, error_man})
+
+这个方法生产一个新的事件管理器进程并连接它。
+
+参数 ``{local, error_man}`` 指定了名字。在这里，事件管理器将在本地注册为 ``error_man`` 。
+
+如果名称被忽略，那么就不会注册事件管理器。这时就必须使用它的pid。名称也可以以 ``{global, Name}`` 的形式给出，这种情况下则会使用 ``global:register_name/2`` 来注册事件管理器。
+
+如果事件管理器是监督树的一部分——即由一个督程启动的——那么必须使用 ``gen_event:start_link`` 启动。还有另外一个函数 ``gen_event:start`` 用于启动一个独立的事件管理器，即，不属于任何监督树的事件管理器。
+
+添加事件处理器
+--------------
+以下例子使用了一个命令行演示了如何启动事件管理器并添加一个事件处理器：
+
+.. code-block:: erlang
+
+    1> gen_event:start({local, error_man}).  
+    {ok,<0.31.0>}  
+    2> gen_event:add_handler(error_man, terminal_logger, []).  
+    ok  
+
+这函数给注册为 ``error_man`` 的事件管理器发送了一个消息，告诉它要添加事件处理器 ``terminal_logger`` 。这个事件管理器会调用回调函数 ``terminal_logger:init([])`` ，其中参数[]是传给 ``add_handler`` 的第三个参数。 ``init`` 要返回 ``{ok, State}`` ，其中 ``State`` 是事件处理器的内部状态。
+
+.. code-block:: erlang
+
+ init(_Args) ->
+     {ok, []}.
+
+这里， ``init`` 无须任何输入数据并忽略了它的参数。同样，对于 ``terminal_logger`` 来说内部状态也是用不到的。对于 ``file_logger`` 来说，内部状态用于保存打开的文件描述符。
+
+.. code-block:: erlang
+
+    init(_Args) ->
+        {ok, Fd} = file:open(File, read),
+        {ok, Fd}.
+
+事件通知
+--------
+
+.. code-block:: erlang
+
+   3> gen_event:notify(error_man, no_reply).
+   ***Error*** no_reply
+   ok
+
+``error_man`` 是事件管理器的名字， ``no_reply`` 是事件。
+
+事件被作为一个消息发送给事件管理器。当收到了这个事件以后，事件管理器为每个安装了的事件处理器按照他们添加的顺序调用 ``handle_event(Event, State)`` 。函数要返回一个元组 ``{ok, State1}`` ，其中 ``State1`` 是事件处理器的状态的新值。
+
+在 ``terminal_logger`` 中：
+
+.. code-block:: erlang
+
+    handle_event(ErrorMsg, State) ->
+        io:format("***Error*** ~p~n", [ErrorMsg]),
+        {ok, State}.
+
+.. code-block:: erlang
+
+    handle_event(ErrorMsg, Fd) ->
+        io:format(Fd, "***Error*** ~p~n", [ErrorMsg]),
+        {ok, Fd}.
+
+删除事件处理器
+--------------
+
+.. code-block:: erlang
+
+    4> gen_event:delete_handler(error_man, terminal_logger, []).
+    ok
+
+这函数给注册为 ``error_man`` 的事件管理器发送了一个消息，告诉它要删除处理器 ``terminal_logger`` 。事件管理器会调用回调函数 ``terminal_logger:terminate([])`` ，其中参数[]是传给 ``delete_handler`` 的第三个参数。 ``terminate`` 应该和 ``init`` 相反，进行必要的清理工作。它的返回值会被忽略。
+
+对于 ``terminal_logger`` ，无须任何清理：
+
+.. code-block:: erlang
+    
+    terminate(_Args, _State) ->
+        ok.
+
+对于 ``file_logger`` ，在 ``init`` 中打开的文件描述符需要被关闭：
+
+.. code-block:: erlang
+
+    terminate(_Args, Fd) ->
+        file:close(Fd).
+
+        
+停止
+----
+当停止事件管理器时，会通过调用 ``terminate/2`` 让每个事件处理器都有机会进行清除工作，与删除处理器的方法一样。
+
+在在监督树中
+~~~~~~~~~~~~
+
+如果事件管理器是监督树的一部分，那无须停止函数。它的督程会自动终止它。具体如何进行是通过督程中的\ :ref:`关闭策略 <shutdown>`\ 集来定义。
+
+独立的事件管理器
+~~~~~~~~~~~~~~~~
+要停止一个事件管理器也可以调用：
+
+.. code-block:: erlang
+
+    > gen_event:stop(error_man).
+    ok
+

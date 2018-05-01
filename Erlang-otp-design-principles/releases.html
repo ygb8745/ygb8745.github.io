@@ -1,0 +1,298 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>发布 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="发布处理" href="release_handling.html" />
+    <link rel="prev" title="分布式应用" href="distributed_applications.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="release_handling.html" title="发布处理"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="distributed_applications.html" title="分布式应用"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="releases"></span><span id="release"></span><h1>发布<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本章应该与 <em>rel(4)</em> ， <em>systools(3)</em> 和 <em>script(4)</em> 。</p>
+<div class="section" id="id2">
+<h2>发布的概念<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>当我们已经写了一个或多个应用后，我们可能想创建一个由这些应用和Erlang/OTP应用的一个子集组成的完整系统。</p>
+<p>要实现这个目的，我们通过创建一个定义在发布中要包含哪些应用的 <a class="reference internal" href="#id3">发布资源文件</a> 。</p>
+<p>该发布资源文件是用于生成 <a class="reference internal" href="#boot"><em>启动脚本</em></a> 和 <a class="reference internal" href="#pack"><em>发布包</em></a> 。传送并安装在另外一个站点的系统称之为 <strong>目标系统</strong> 。如果使用发布包创建一个目标系统将在系统原则中描述。</p>
+</div>
+<div class="section" id="id3">
+<h2>发布资源文件<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>要定义一个发布，首先要创建一个 <strong>发布资源文件</strong> ，简称 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件，我们在这里指定发布的名称和版本、它基于哪个ERTS版本，以及它由哪些应用组成：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">release</span><span class="p">,</span> <span class="p">{</span><span class="nv">Name</span><span class="p">,</span><span class="nv">Vsn</span><span class="p">},</span> <span class="p">{</span><span class="n">erts</span><span class="p">,</span> <span class="nv">EVsn</span><span class="p">},</span>
+ <span class="p">[{</span><span class="nv">Application1</span><span class="p">,</span> <span class="nv">AppVsn1</span><span class="p">},</span>
+   <span class="p">...</span>
+  <span class="p">{</span><span class="nv">ApplicationN</span><span class="p">,</span> <span class="nv">AppVsnN</span><span class="p">}]}.</span>
+</pre></div>
+</div>
+<p>文件必须叫做 <tt class="docutils literal"><span class="pre">Rel.rel</span></tt> ，其中 <tt class="docutils literal"><span class="pre">Rel</span></tt> 是一个唯一名字。</p>
+<p><tt class="docutils literal"><span class="pre">Name</span></tt> ， <tt class="docutils literal"><span class="pre">Vsn</span></tt> 和 <tt class="docutils literal"><span class="pre">Evsn</span></tt> 都是字符串。</p>
+<p>每个 <tt class="docutils literal"><span class="pre">Application</span></tt> （原子）和 <tt class="docutils literal"><span class="pre">AppVsn</span></tt> （字符串）是包含在发布内的应用的名称和版本。注意，基于Erlang/OTP的最小发布由应用 <tt class="docutils literal"><span class="pre">kernel</span></tt> 和 <tt class="docutils literal"><span class="pre">stdlib</span></tt> 组成，所以这两个应用必须被包含在列表中。</p>
+<p>例如：我们要创建一个来自<a class="reference external" href="applications.html#applications"><em>应用</em></a>一章的 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的发布。这个应用包含以下 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">,</span>
+ <span class="p">[{</span><span class="n">description</span><span class="p">,</span> <span class="s">&quot;Channel allocator&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">vsn</span><span class="p">,</span> <span class="s">&quot;1&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">modules</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_app</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">registered</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">applications</span><span class="p">,</span> <span class="p">[</span><span class="n">kernel</span><span class="p">,</span> <span class="n">stdlib</span><span class="p">,</span> <span class="n">sasl</span><span class="p">]},</span>
+  <span class="p">{</span><span class="n">mod</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_app</span><span class="p">,[]}}</span>
+ <span class="p">]}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">.rel</span></tt> 文件还必须包含 <tt class="docutils literal"><span class="pre">kernel</span></tt> ， <tt class="docutils literal"><span class="pre">stdlib</span></tt> 和 <tt class="docutils literal"><span class="pre">sasl</span></tt> ，因为这些应用是 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 必须的。我们把这个文件叫做 <tt class="docutils literal"><span class="pre">ch_rel-1.rel</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">release</span><span class="p">,</span>
+ <span class="p">{</span><span class="s">&quot;ch_rel&quot;</span><span class="p">,</span> <span class="s">&quot;A&quot;</span><span class="p">},</span>
+ <span class="p">{</span><span class="n">erts</span><span class="p">,</span> <span class="s">&quot;5.3&quot;</span><span class="p">},</span>
+ <span class="p">[{</span><span class="n">kernel</span><span class="p">,</span> <span class="s">&quot;2.9&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">stdlib</span><span class="p">,</span> <span class="s">&quot;1.12&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">sasl</span><span class="p">,</span> <span class="s">&quot;1.10&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">ch_app</span><span class="p">,</span> <span class="s">&quot;1&quot;</span><span class="p">}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id4">
+<span id="boot"></span><h2>生成启动脚本<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>在SASL模块 <tt class="docutils literal"><span class="pre">systools</span></tt> 里面有很多可以用来构建和检验发布的工具。函数读取 <tt class="docutils literal"><span class="pre">.rel</span></tt> 和 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件并执行语法和依赖性检查。函数 <tt class="docutils literal"><span class="pre">systools:make_script/1,2</span></tt> 用于生成启动脚本（参见系统原则）。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">systools</span><span class="p">:</span><span class="n">make_script</span><span class="p">(</span><span class="s">&quot;ch_rel-1&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">local</span><span class="p">]).</span>
+<span class="n">ok</span>
+</pre></div>
+</div>
+<p>这就创建了一个启动脚本，包括可阅读的版本 <tt class="docutils literal"><span class="pre">ch_rel-1.script</span></tt> 和运行时系统所使用的二进制版本 <tt class="docutils literal"><span class="pre">ch_re-1.boot</span></tt> 。 “ <tt class="docutils literal"><span class="pre">ch_rel-1</span></tt> ”是 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件去掉扩展名的名称。 <tt class="docutils literal"><span class="pre">local</span></tt> 是表示在启动脚本中用到的应用所处的目录的一个选项，没有使用 <tt class="docutils literal"><span class="pre">$ROOT/lib</span></tt> 。（ <tt class="docutils literal"><span class="pre">$ROOT</span></tt> 是安装了的发布的根目录）对于本地测试生成的启动脚本非常有用。</p>
+<p>当使用启动脚本启动Erlang/OTP时， <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件中的所有应用都会被自动加载和启动：</p>
+<div class="highlight-erlang"><pre>% erl -boot ch_rel-1
+Erlang (BEAM) emulator version 5.3
+
+Eshell V5.3  (abort with ^G)
+1&gt;
+=PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+          supervisor: {local,sasl_safe_sup}
+             started: [{pid,&lt;0.33.0&gt;},
+                       {name,alarm_handler},
+                       {mfa,{alarm_handler,start_link,[]}},
+                       {restart_type,permanent},
+                       {shutdown,2000},
+                       {child_type,worker}]
+
+...
+
+=PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+         application: sasl
+          started_at: nonode@nohost
+
+...
+=PROGRESS REPORT==== 13-Jun-2003::12:01:15 ===
+         application: ch_app
+          started_at: nonode@nohost</pre>
+</div>
+</div>
+<div class="section" id="id5">
+<span id="pack"></span><h2>创建一个发布包<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>函数 <tt class="docutils literal"><span class="pre">systools:make_tar/1,2</span></tt> 以一个 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件作为输入，并创建一个包含了指定应用的压缩tar包，即一个<strong>发布包</strong>（release package）。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">systools</span><span class="p">:</span><span class="n">make_script</span><span class="p">(</span><span class="s">&quot;ch_rel-1&quot;</span><span class="p">).</span>
+<span class="n">ok</span>
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">systools</span><span class="p">:</span><span class="n">make_tar</span><span class="p">(</span><span class="s">&quot;ch_rel-1&quot;</span><span class="p">).</span>
+<span class="n">ok</span>
+</pre></div>
+</div>
+<p>默认的发布包包含了所有的应用的 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件和目标代码，并根据 <a class="reference external" href="applications.html#app-dir"><em>应用目录结构</em></a> 建立结构，同时将二进制的启动脚本更名为 <tt class="docutils literal"><span class="pre">start.boot</span></tt> ，还包含了 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件。</p>
+<div class="highlight-python"><pre>% tar tf ch_rel-1.tar
+lib/kernel-2.9/ebin/kernel.app
+lib/kernel-2.9/ebin/application.beam
+...
+lib/stdlib-1.12/ebin/stdlib.app
+lib/stdlib-1.12/ebin/beam_lib.beam
+...
+lib/sasl-1.10/ebin/sasl.app
+lib/sasl-1.10/ebin/sasl.beam
+...
+lib/ch_app-1/ebin/ch_app.app
+lib/ch_app-1/ebin/ch_app.beam
+lib/ch_app-1/ebin/ch_sup.beam
+lib/ch_app-1/ebin/ch3.beam
+releases/A/start.boot
+releases/ch_rel-1.rel</pre>
+</div>
+<p>注意在制作发布包之前，生成新的启动脚本没有设置 <tt class="docutils literal"><span class="pre">local</span></tt> 选项。在发布包中，所有的应用目录都放在了 <tt class="docutils literal"><span class="pre">lib</span></tt> 。同时，我们不知道发布包会被安装到何处，所以我们不想在启动脚本中硬编码任何绝对路径。</p>
+<p>如果有一个 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件以及/或叫做 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 系统配置文件，这些文件也会被包含在发布包。参见 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> :</p>
+<p>也可以设置参数让发布包包含代码和ERTS二进制文件。</p>
+<p>如何使用发布包安装首个目标系统，请参考系统原理。如果在已存在系统的安装新的发布包，请参考 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> 。</p>
+</div>
+<div class="section" id="id6">
+<h2>目录结构<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p>发布处理器从发布包总安装的代码的目录结构：</p>
+<div class="highlight-python"><pre>$ROOT/lib/App1-AVsn1/ebin
+                  /priv
+       /App2-AVsn2/ebin
+                  /priv
+       ...
+       /AppN-AVsnN/ebin
+                  /priv
+   /erts-EVsn/bin
+   /releases/Vsn
+   /bin</pre>
+</div>
+<dl class="docutils">
+<dt><tt class="docutils literal"><span class="pre">lib</span></tt></dt>
+<dd>应用程序目录。</dd>
+<dt><tt class="docutils literal"><span class="pre">erts-EVsn/bin</span></tt></dt>
+<dd>Erlang运行时系统的可执行文件。</dd>
+<dt><tt class="docutils literal"><span class="pre">releases/Vsn</span></tt></dt>
+<dd><tt class="docutils literal"><span class="pre">.rel</span></tt> 文件以及启动脚本 <tt class="docutils literal"><span class="pre">start.boot</span></tt> 。
+还有 <tt class="docutils literal"><span class="pre">relup</span></tt> 、 <tt class="docutils literal"><span class="pre">sys.config</span></tt> ，如果存在于发布包中。</dd>
+<dt><tt class="docutils literal"><span class="pre">bin</span></tt></dt>
+<dd>顶层Erlang运行时系统可执行文件。</dd>
+</dl>
+<p>应用不一定非得放在 <tt class="docutils literal"><span class="pre">$ROOT/lib</span></tt> 目录中。这样一来，一些安装目录可以存在并包含一个系统的不同部分。例如，前面的例子可以按如下方式扩展：</p>
+<div class="highlight-python"><pre>$SECOND_ROOT/.../SApp1-SAVsn1/ebin
+                             /priv
+                /SApp2-SAVsn2/ebin
+                             /priv
+                ...
+                /SAppN-SAVsnN/ebin
+                             /priv
+
+$THIRD_ROOT/TApp1-TAVsn1/ebin
+                        /priv
+           /TApp2-TAVsn2/ebin
+                        /priv
+           ...
+           /TAppN-TAVsnN/ebin
+                        /priv</pre>
+</div>
+<p>其中 <tt class="docutils literal"><span class="pre">$SECOND_ROOT</span></tt> 和 <tt class="docutils literal"><span class="pre">$THIRD_ROOT</span></tt> 是作为调用 <tt class="docutils literal"><span class="pre">systools:make_script/2</span></tt> 函数中的变量引入的。</p>
+<div class="section" id="id7">
+<h3>无盘与只读客户端<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h3>
+<p>如果一个完整的系统包含一些无盘和只读客户端节点，那么必须在 <tt class="docutils literal"><span class="pre">$ROOT</span></tt> 目录中添加一个 <tt class="docutils literal"><span class="pre">clients</span></tt> 目录。一个只读节点的意思是一个节点的文件系统是只读的。</p>
+<p><tt class="docutils literal"><span class="pre">clients</span></tt> 目录还应该对每个支持的客户端节点有一个对应的子目录。每个客户端目录的名字必须是对应的客户端节点的名字。每个客户端目录还应包含 <tt class="docutils literal"><span class="pre">bin</span></tt> 和 <tt class="docutils literal"><span class="pre">releases</span></tt> 子目录。这些目录用于存放有关安装的发布的信息，并且给客户端指派当前的发布。终上所述， <tt class="docutils literal"><span class="pre">$ROOT</span></tt> 目录应包含以下内容：</p>
+<div class="highlight-python"><pre>$ROOT/...
+    /clients/ClientName1/bin
+                        /releases/Vsn
+            /ClientName2/bin
+                        /releases/Vsn
+            ...
+            /ClientNameN/bin
+                        /releases/Vsn</pre>
+</div>
+<p>如果所有的客户端都运行在同一种类型的Erlang机器上，那么应该使用这种结构。如果有些客户端运行不同类型的Erlang机器，即运行在不同的操作系统上，那么 <tt class="docutils literal"><span class="pre">clients</span></tt> 目录可以被划分为每种Erlang机器一个子目录。或者，你也可以为每种类型的机器设置一个 <tt class="docutils literal"><span class="pre">$ROOT</span></tt> 。对于每种类型，还应包含为 <tt class="docutils literal"><span class="pre">$ROOT</span></tt> 指定的某些目录：</p>
+<div class="highlight-python"><pre>$ROOT/...
+    /clients/Type1/lib
+                  /erts-EVsn
+                  /bin
+                  /ClientName1/bin
+                              /releases/Vsn
+                  /ClientName2/bin
+                              /releases/Vsn
+                  ...
+                  /ClientNameN/bin
+                              /releases/Vsn
+            ...
+            /TypeN/lib
+                  /erts-EVsn
+                  /bin
+                  ...</pre>
+</div>
+<p>对于这个结构， <tt class="docutils literal"><span class="pre">Type1</span></tt> 型的客户端的根目录是 <tt class="docutils literal"><span class="pre">$ROOT/clients/Type1</span></tt> 。</p>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">发布</a><ul>
+<li><a class="reference external" href="#id2">发布的概念</a></li>
+<li><a class="reference external" href="#id3">发布资源文件</a></li>
+<li><a class="reference external" href="#id4">生成启动脚本</a></li>
+<li><a class="reference external" href="#id5">创建一个发布包</a></li>
+<li><a class="reference external" href="#id6">目录结构</a><ul>
+<li><a class="reference external" href="#id7">无盘与只读客户端</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="distributed_applications.html" title="previous chapter">分布式应用</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="release_handling.html" title="next chapter">发布处理</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/releases.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="release_handling.html" title="发布处理"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="distributed_applications.html" title="分布式应用"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 02, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,537 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Appup Cookbook &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="prev" title="发布处理" href="release_handling.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="release_handling.html" title="发布处理"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="id1">
+<span id="appup-cookbook"></span><h1>Appup Cookbook<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h1>
+<p>本章包含了对于典型的运行时升级／降级案例的 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件的范例。</p>
+<div class="section" id="id2">
+<h2>变更功能模块<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>当要对一个功能模块进行变更时，例如如果添加了一个新的函数或者更正了一个错误，使用简单代码替换就足够了。</p>
+<p>例如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id3">
+<h2>变更驻留模块<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>在依据OTP设计原理实现的系统中，所有的进程，除了系统进程和特殊进程，都属于 <tt class="docutils literal"><span class="pre">supervisor</span></tt> 、 <tt class="docutils literal"><span class="pre">gen_server</span></tt> 、 <tt class="docutils literal"><span class="pre">gen_fsm</span></tt> 或者 <tt class="docutils literal"><span class="pre">gen_event</span></tt> 行为的其中之一。它们属于STDLIB应用，如果升级或降级的一般需要模拟器重启。</p>
+<p>因此OTP不提供对驻留模块变更的支持，除了 <a class="reference internal" href="#spec"><em>特殊进程</em></a> 。</p>
+</div>
+<div class="section" id="id4">
+<h2>更改回调模块<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>回调模块是一种功能模块，对于代码扩展，只要使用简单代码替换就够了。</p>
+<p>例如：当给在 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> 中的例子 <tt class="docutils literal"><span class="pre">ch3</span></tt> 添加一个函数时， <tt class="docutils literal"><span class="pre">ch_app.appup</span></tt> 应如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>OTP还支持更改行为进程的内部状态，参见下面的 <a class="reference internal" href="#id5">变更内部状态</a> 。</p>
+</div>
+<div class="section" id="id5">
+<h2>变更内部状态<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>在这种情况下，简单代码替换就不够了。进程必须在切换到新版本的回调模块之前，明确地使用回调函数 <tt class="docutils literal"><span class="pre">code_change</span></tt> 转换它的状态。这样就必须使用同步代码替换。</p>
+<p>例如：想一下来自 <a class="reference external" href="gen_server.html#gen-server"><em>gen_server行为</em></a> 一章的 gen_server <tt class="docutils literal"><span class="pre">ch3</span></tt> 。内部状态是一个表示可用频道的 <tt class="docutils literal"><span class="pre">Chs</span></tt> 值。假设我们想添加一个计数器 <tt class="docutils literal"><span class="pre">N</span></tt> 用来跟踪目前的 <tt class="docutils literal"><span class="pre">alloc</span></tt> 请求数。这就表示我们需要将格式更改为 <tt class="docutils literal"><span class="pre">{Chs,</span> <span class="pre">N}</span></tt> 。</p>
+<p><tt class="docutils literal"><span class="pre">.appup</span></tt> 文件可以为：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="p">[]}}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch3</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="p">[]}}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">update</span></tt> 指令的第三个元素是一个元组 <tt class="docutils literal"><span class="pre">{advanced,</span> <span class="pre">Extra}</span></tt> ，它说受影响的进程要在载入新版本的模块之前进行一个状态转换。进程会调用回调函数 <tt class="docutils literal"><span class="pre">code_change</span></tt> （参见 <tt class="docutils literal"><span class="pre">gen_server(3)</span></tt> ）。 <tt class="docutils literal"><span class="pre">Extra</span></tt> ，在这里是 []， 会原样传递给该函数：</p>
+<div class="highlight-erlang" id="code-change"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch3</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">code_change</span><span class="o">/</span><span class="mi">3</span><span class="p">]).</span>
+<span class="p">...</span>
+<span class="nf">code_change</span><span class="p">({</span><span class="n">down</span><span class="p">,</span> <span class="p">_</span><span class="nv">Vsn</span><span class="p">},</span> <span class="p">{</span><span class="nv">Chs</span><span class="p">,</span> <span class="nv">N</span><span class="p">},</span> <span class="p">_</span><span class="nv">Extra</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">};</span>
+<span class="nf">code_change</span><span class="p">(_</span><span class="nv">Vsn</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">,</span> <span class="p">_</span><span class="nv">Extra</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{</span><span class="nv">Chs</span><span class="p">,</span> <span class="mi">0</span><span class="p">}}.</span>
+</pre></div>
+</div>
+<p>如果是降级，那么第一个参数是 <tt class="docutils literal"><span class="pre">{down,Vsn}</span></tt> ，如果是升级，那么则是 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 。表达式 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 是由模块的“原始”版本中获得的，即，由哪个版本升级来的，或者要降级到哪个版本。</p>
+<p>版本由模块属性 <tt class="docutils literal"><span class="pre">vsn</span></tt> 定义——如果有。在 <tt class="docutils literal"><span class="pre">ch3</span></tt> 中没有这种属性，这种情况下则是BEAM文件的校验和（一个大整数），这个值没什么意思所以在这里忽略掉。</p>
+<p>（ <tt class="docutils literal"><span class="pre">ch3</span></tt> 的其他回调函数也需要进行修改，可能还需要添加新的借口函数，就不在此展示了）。</p>
+</div>
+<div class="section" id="id6">
+<h2>模块依赖性<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p>假设我们通过添加一个新的接口函数扩展了某个模块，如同在 <a class="reference external" href="release_handling.html#release-handling"><em>发布处理</em></a> 中的例子一样，其中给 <tt class="docutils literal"><span class="pre">ch3</span></tt> 添加了一个函数 <tt class="docutils literal"><span class="pre">available/0</span></tt> 。</p>
+<p>假设如果我们还要在模块 <tt class="docutils literal"><span class="pre">m1</span></tt> 中添加一个到该函数的调用，那么如果新版本的 <tt class="docutils literal"><span class="pre">m1</span></tt> 先被载入并且在新版本的 <tt class="docutils literal"><span class="pre">ch3</span></tt> 被载入之前调用了 <tt class="docutils literal"><span class="pre">ch3:available/0</span></tt> ，那么就会发生一个运行时错误。</p>
+<p>因此，在升级的情况下， <tt class="docutils literal"><span class="pre">ch3</span></tt> 必须在 <tt class="docutils literal"><span class="pre">m1</span></tt> 之前载入；在降级的情况下则要反过来。这样，我们说 <tt class="docutils literal"><span class="pre">m1</span></tt> 是<strong>依赖于</strong><tt class="docutils literal"><span class="pre">ch3</span></tt> 的。在发布处理指令中，这是通过元素 <tt class="docutils literal"><span class="pre">DepMods</span></tt> 来表达的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="nb">load_module</span><span class="p">,</span> <span class="nv">Module</span><span class="p">,</span> <span class="nv">DepMods</span><span class="p">}</span>
+<span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="nv">Module</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="nv">Extra</span><span class="p">},</span> <span class="nv">DepMods</span><span class="p">}</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">DepMods</span></tt> 是 <tt class="docutils literal"><span class="pre">Module</span></tt> 所依赖的模块的列表。</p>
+<p>例如：在应用 <tt class="docutils literal"><span class="pre">myapp</span></tt> 中的 <tt class="docutils literal"><span class="pre">m1</span></tt> 模块当从“1”升级到“2”或从“2”降级到“1”时，是依赖于 <tt class="docutils literal"><span class="pre">ch3</span></tt> 的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="n">myapp</span><span class="p">.</span><span class="nn">appup</span><span class="p">:</span>
+
+<span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}]</span>
+<span class="p">}.</span>
+
+<span class="n">ch_app</span><span class="p">.</span><span class="nn">appup</span><span class="p">:</span>
+
+<span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>如果 <tt class="docutils literal"><span class="pre">m1</span></tt> 和 <tt class="docutils literal"><span class="pre">ch3</span></tt> 属于同一个应用， <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件应如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">},</span>
+    <span class="p">{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">ch3</span><span class="p">},</span>
+    <span class="p">{</span><span class="nb">load_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">,</span> <span class="p">[</span><span class="n">ch3</span><span class="p">]}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>注意，当降级的时候，还是 <tt class="docutils literal"><span class="pre">m1</span></tt> 依赖于 <tt class="docutils literal"><span class="pre">ch3</span></tt> 。 <tt class="docutils literal"><span class="pre">systools</span></tt> 知道升级和降级之间的区别并生成正确的 <tt class="docutils literal"><span class="pre">relup</span></tt> ，其中当升级的时候 <tt class="docutils literal"><span class="pre">ch3</span></tt> 会在 <tt class="docutils literal"><span class="pre">m1</span></tt> 之前加载，而当降级的时候 <tt class="docutils literal"><span class="pre">m1</span></tt> 会在 <tt class="docutils literal"><span class="pre">ch3</span></tt> 之前加载。</p>
+</div>
+<div class="section" id="id7">
+<span id="spec"></span><h2>变更特殊进程的代码<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h2>
+<p>在这种情况下，简单代码替换是不够的。当特殊进程的驻留模块的新版本被加载后，进程必须对它的循环函数进行一个完全合格的调用来切换到新的代码上。这样就必须使用同步代码替换。</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">对于特殊进程，用户定义的驻留模块的名称必须列在子进程规格的 <tt class="docutils literal"><span class="pre">Modules</span></tt> 中，以便发布处理器能找到该进程。</p>
+</div>
+<p>例如。想一下 <a class="reference external" href="sys_and_proc_lib.html#sys-proc-lib"><em>sys和proc_lib</em></a> 一章中的例子 <tt class="docutils literal"><span class="pre">ch4</span></tt> 。当通过督程启动的时候，子进程规格应如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">ch4</span><span class="p">,</span> <span class="p">{</span><span class="n">ch4</span><span class="p">,</span> <span class="n">start_link</span><span class="p">,</span> <span class="p">[]},</span>
+ <span class="n">permanent</span><span class="p">,</span> <span class="n">brutal_kill</span><span class="p">,</span> <span class="n">worker</span><span class="p">,</span> <span class="p">[</span><span class="n">ch4</span><span class="p">]}</span>
+</pre></div>
+</div>
+<p>如果 <tt class="docutils literal"><span class="pre">ch4</span></tt> 是应用 <tt class="docutils literal"><span class="pre">sp_app</span></tt> 中的一部分，并且当该应用从版本“1”升级到“2”的时候，要载入 <tt class="docutils literal"><span class="pre">ch4</span></tt> 的一个新版本，则 <tt class="docutils literal"><span class="pre">sp_app.appup</span></tt> 应如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch4</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="p">[]}}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch4</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span> <span class="p">[]}}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">update</span></tt> 指令必须包含元组 <tt class="docutils literal"><span class="pre">{advanced,Extra}</span></tt> 。该指令将让特殊进程调用回调函数 <tt class="docutils literal"><span class="pre">system_code_change/4</span></tt> ，用户必须实现该函数。表达式 <tt class="docutils literal"><span class="pre">Extra</span></tt> ，在这里是 []，会被原样传递给 <tt class="docutils literal"><span class="pre">system_code_change/4</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch4</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">system_code_change</span><span class="o">/</span><span class="mi">4</span><span class="p">]).</span>
+<span class="p">...</span>
+
+<span class="nf">system_code_change</span><span class="p">(</span><span class="nv">Chs</span><span class="p">,</span> <span class="p">_</span><span class="nv">Module</span><span class="p">,</span> <span class="p">_</span><span class="nv">OldVsn</span><span class="p">,</span> <span class="p">_</span><span class="nv">Extra</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Chs</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>第一个参数是内部状态 <tt class="docutils literal"><span class="pre">State</span></tt> ，来自函数 <tt class="docutils literal"><span class="pre">sys:handle_system_msg(Request,</span> <span class="pre">From,</span> <span class="pre">Parent,</span> <span class="pre">Module,</span> <span class="pre">Deb,</span> <span class="pre">State)</span></tt> ，当特殊进程接受到一个系统消息的时候由特殊进程调用该函数。在 <tt class="docutils literal"><span class="pre">ch4</span></tt> 中，内部状态是可用频道的集合 <tt class="docutils literal"><span class="pre">Chs</span></tt> 。</p>
+<p>第二个参数是模块的名字（ <tt class="docutils literal"><span class="pre">ch4</span></tt> ）。</p>
+<p>第三个参数是 <tt class="docutils literal"><span class="pre">Vsn</span></tt> 或者 <tt class="docutils literal"><span class="pre">{down,Vsn}</span></tt> ，和 <a class="reference internal" href="#code-change"><em>gen_server:code_change/3</em></a> 中描述的一样。</p>
+<p>在这里，所有参数除了第一个外都被忽略了，同时函数仅仅直接返回内部状态。如果代码只是被扩展了下，那么这样就够了。如果我们还想更改内部状态（类似于在 <a class="reference internal" href="#id5">变更内部状态</a> 中的例子），就可以在这个函数中进行，并返回 <tt class="docutils literal"><span class="pre">{ok,Chs2}</span></tt> 。</p>
+</div>
+<div class="section" id="id8">
+<h2>变更督程<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h2>
+<p>督程行为支持更改内部状态，即，更改重启策略和最大重启频率属性，以及更改现存的子进程规格。</p>
+<p>还可以添加和删除子进程，但这不是自动处理的。指令必须在 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件中给出。</p>
+<div class="section" id="id9">
+<h3>变更属性<a class="headerlink" href="#id9" title="Permalink to this headline">¶</a></h3>
+<p>由于督程需要更改它的内部状态，所以必须使用同步代码替换。不过，必须使用特殊的 <tt class="docutils literal"><span class="pre">update</span></tt> 指令。</p>
+<p>无论在升级还是降级的情况下，新版本的回调模块必须先加载。然后可以检查 <tt class="docutils literal"><span class="pre">init/1</span></tt> 的新返回值并相应改变内部状态。</p>
+<p>对于督程要使用以下 <tt class="docutils literal"><span class="pre">upgrade</span></tt> 指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="nv">Module</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>例如：假设我们想将 <a class="reference external" href="supervisor.html#supervisor"><em>Supervisor行为</em></a> 一章中的 <tt class="docutils literal"><span class="pre">ch_sup</span></tt> 的重启策略从 <tt class="docutils literal"><span class="pre">one_for_one</span></tt> 更改成 <tt class="docutils literal"><span class="pre">one_for_all</span></tt> 。我们要修改 <tt class="docutils literal"><span class="pre">ch_sup.erl</span></tt> 中的回调函数 <tt class="docutils literal"><span class="pre">init/1</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">ch_sup</span><span class="p">).</span>
+<span class="p">...</span>
+
+<span class="nf">init</span><span class="p">(_</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{{</span><span class="n">one_for_all</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">60</span><span class="p">},</span> <span class="p">...}}.</span>
+</pre></div>
+</div>
+<p>文件 <tt class="docutils literal"><span class="pre">ch_app.appup</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id10">
+<h3>变更子进程规格<a class="headerlink" href="#id10" title="Permalink to this headline">¶</a></h3>
+<p>当更改一个现存的子进程规格时，指令——包括 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件——和上述的变更属性是一样的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>更改不会影响现有的子进程。例如，更改了启动函数只会指定以后如果需要重启，那么子进程应该如何重启。</p>
+<p>注意，子进程规格的id不可以被更改。</p>
+<p>还要注意更改子进程规格的 <tt class="docutils literal"><span class="pre">Modules</span></tt> 字段可能会影响到发布处理过程自身，因为该字段用于在同步代码替换中识别哪些进程会受到影响。</p>
+</div>
+<div class="section" id="id11">
+<span id="sup-add"></span><h3>添加和删除子进程<a class="headerlink" href="#id11" title="Permalink to this headline">¶</a></h3>
+<p>前面说过，变更子进程规格不会影响现存的子进程。新的子进程规格会被自动加入但不会被删除。并且，子进程不会自动启动或者终止，所以，必须明确使用 <tt class="docutils literal"><span class="pre">apply</span></tt> 指令。</p>
+<p>例如：假设当 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 从“1”升级到“2”时，我们想要给 <tt class="docutils literal"><span class="pre">ch_sup</span></tt> 添加一个新的子进程 <tt class="docutils literal"><span class="pre">m1</span></tt> 。这也意味着如果从“2”降级到“1”的时候， <tt class="docutils literal"><span class="pre">m1</span></tt> 要被删除。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">restart_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}}</span>
+   <span class="p">]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">terminate_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">delete_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">}</span>
+   <span class="p">]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>注意指令的顺序非常重要。</p>
+<p>还要注意督程必须注册为 <tt class="docutils literal"><span class="pre">ch_sup</span></tt> 该脚本才能正常运行。如果督程没有被注册，那它就不能直接从脚本中访问。这就必须写一个帮助函数用来找到督程的pid并调用 <tt class="docutils literal"><span class="pre">supervisor:restart_child</span></tt> 等，而且必须使用 <tt class="docutils literal"><span class="pre">apply</span></tt> 指令在脚本中调用该函数。</p>
+<p>如果在 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的版本“2”中，引入了模块 <tt class="docutils literal"><span class="pre">m1</span></tt> ，那么它也必须在升级时被加载，在降级时被删除：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="n">add_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">},</span>
+    <span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">restart_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}}</span>
+   <span class="p">]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span>
+   <span class="p">[{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">terminate_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,</span> <span class="p">{</span><span class="n">supervisor</span><span class="p">,</span> <span class="n">delete_child</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_sup</span><span class="p">,</span> <span class="n">m1</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">update</span><span class="p">,</span> <span class="n">ch_sup</span><span class="p">,</span> <span class="n">supervisor</span><span class="p">},</span>
+    <span class="p">{</span><span class="nb">delete_module</span><span class="p">,</span> <span class="n">m1</span><span class="p">}</span>
+   <span class="p">]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>再次注意指令的顺序非常重要。当升级时，在可以启动新的子进程之前，必须加载 <tt class="docutils literal"><span class="pre">m1</span></tt> 并且更改督程的子进程规格。当降级时，子进程必须在更改子进程规格和删除模块之前终止。</p>
+</div>
+</div>
+<div class="section" id="id12">
+<h2>添加或删除模块<a class="headerlink" href="#id12" title="Permalink to this headline">¶</a></h2>
+<p>例如： <tt class="docutils literal"><span class="pre">ch_app</span></tt> 中添加了一个新的功能模块 <tt class="docutils literal"><span class="pre">m</span></tt> ：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">add_module</span><span class="p">,</span> <span class="n">m</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="nb">delete_module</span><span class="p">,</span> <span class="n">m</span><span class="p">}]}]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id13">
+<h2>启动或终止进程<a class="headerlink" href="#id13" title="Permalink to this headline">¶</a></h2>
+<p>在一个按照OTP设计原理构建的系统中，任何进程都是某个督程的子进程，参见前面的 <a class="reference internal" href="#id11">添加和删除子进程</a> 。</p>
+</div>
+<div class="section" id="id14">
+<h2>添加或移除应用<a class="headerlink" href="#id14" title="Permalink to this headline">¶</a></h2>
+<p>当添加或移除一个应用时，无需任何 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件。当生成 <tt class="docutils literal"><span class="pre">relup</span></tt> 时，会比较 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件并自动添加 <tt class="docutils literal"><span class="pre">add_application</span></tt> 和 <tt class="docutils literal"><span class="pre">remove_application</span></tt> 指令。</p>
+</div>
+<div class="section" id="id15">
+<h2>重启应用<a class="headerlink" href="#id15" title="Permalink to this headline">¶</a></h2>
+<p>当变更太复杂难以在不重启进程的情况下进行的，重启应用就非常有用，比如当监督层次结构发生变化时。</p>
+<p>例如：当为 <tt class="docutils literal"><span class="pre">ch_sup</span></tt> 添加一个新的子进程 <tt class="docutils literal"><span class="pre">m1</span></tt> ，如 <a class="reference internal" href="#sup-add"><em>上面的例子</em></a> 所示，不用更新督程的另一种做法是重启整个应用：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">restart_application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">restart_application</span><span class="p">,</span> <span class="n">ch_app</span><span class="p">}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id16">
+<span id="app-spec"></span><h2>变更应用规格<a class="headerlink" href="#id16" title="Permalink to this headline">¶</a></h2>
+<p>当安装一个发布时，应用规格会在执行 <tt class="docutils literal"><span class="pre">relup</span></tt> 脚本之前自动更新。因此，在 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件中无需任何指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id17">
+<h2>变更应用配置<a class="headerlink" href="#id17" title="Permalink to this headline">¶</a></h2>
+<p>通过更新 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中的 <tt class="docutils literal"><span class="pre">env</span></tt> 键来更改应用配置其实是变更应用规格的一个特例，见 <a class="reference internal" href="#app-spec"><em>上节</em></a> 。</p>
+<p>或者，可以在 <tt class="docutils literal"><span class="pre">sys.config</span></tt> 文件中添加或更改应用配置参数。</p>
+</div>
+<div class="section" id="id18">
+<h2>变更被包含的应用<a class="headerlink" href="#id18" title="Permalink to this headline">¶</a></h2>
+<p>添加、删除、重启应用的发布处理指令只能作用于主应用。没有针对被包含的应用的相应指令。不过，由于一个被包含的应用其实就是一个有最高督程的监督树，并作为进行包含的应用中的某个督程的子进程被启动的，所以可以手工创建一个 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件。</p>
+<p>例如：假设我们有一个发布包含一个应用 <tt class="docutils literal"><span class="pre">prim_app</span></tt> ，它的监督树里有一个督程 <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 。</p>
+<p>在发布的新版本中，我们的范例应用 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 要被包含在 <tt class="docutils literal"><span class="pre">prim_app</span></tt> 中。也就是说，它的最高督程要被作为 <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 的子进程来启动。</p>
+<ol class="arabic simple">
+<li>编辑 <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 的代码：</li>
+</ol>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(...)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{...</span><span class="n">supervisor</span> <span class="n">flags</span><span class="p">...,</span>
+          <span class="p">[...,</span>
+           <span class="p">{</span><span class="n">ch_sup</span><span class="p">,</span> <span class="p">{</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">start_link</span><span class="p">,[]},</span>
+            <span class="n">permanent</span><span class="p">,</span><span class="n">infinity</span><span class="p">,</span><span class="n">supervisor</span><span class="p">,[</span><span class="n">ch_sup</span><span class="p">]},</span>
+           <span class="p">...]}}.</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li>编辑 <tt class="docutils literal"><span class="pre">prim_app</span></tt> 的 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件：</li>
+</ol>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">application</span><span class="p">,</span> <span class="n">prim_app</span><span class="p">,</span>
+ <span class="p">[...,</span>
+  <span class="p">{</span><span class="n">vsn</span><span class="p">,</span> <span class="s">&quot;2&quot;</span><span class="p">},</span>
+  <span class="p">...,</span>
+  <span class="p">{</span><span class="n">included_applications</span><span class="p">,</span> <span class="p">[</span><span class="n">ch_app</span><span class="p">]},</span>
+  <span class="p">...</span>
+ <span class="p">]}.</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li>创建一个新的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件，包含 <tt class="docutils literal"><span class="pre">ch_app</span></tt> ：</li>
+</ol>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">release</span><span class="p">,</span>
+ <span class="p">...,</span>
+ <span class="p">[...,</span>
+  <span class="p">{</span><span class="n">prim_app</span><span class="p">,</span> <span class="s">&quot;2&quot;</span><span class="p">},</span>
+  <span class="p">{</span><span class="n">ch_app</span><span class="p">,</span> <span class="s">&quot;1&quot;</span><span class="p">}]}.</span>
+</pre></div>
+</div>
+<div class="section" id="id19">
+<h3>应用重启<a class="headerlink" href="#id19" title="Permalink to this headline">¶</a></h3>
+<p>4.a. 一种启动被包含的应用的方式是重启整个 <tt class="docutils literal"><span class="pre">prim_app</span></tt> 应用。一般而言，我们要在 <tt class="docutils literal"><span class="pre">prim_app</span></tt> 的 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件中使用 <tt class="docutils literal"><span class="pre">restart_application</span></tt> 指令。</p>
+<p>但是，如果我们这么做并生成了 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件，它不光会包含重启（即移除再添加） <tt class="docutils literal"><span class="pre">prim_app</span></tt> ，它还会包含启动 <tt class="docutils literal"><span class="pre">ch_app</span></tt> （在降级的情况下是停止）。这是由于 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 也被包含在了新的 <tt class="docutils literal"><span class="pre">.rel</span></tt> 文件中，而旧的里面没有。</p>
+<p>所以，正确的 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件要被手工创建，要么重头写要么编辑生成好的版本。启动/停止 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的指令被替换成了加载/卸载应用的指令：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;B&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">ch_app</span><span class="p">,</span><span class="s">&quot;1&quot;</span><span class="p">,[</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">ch3</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="s">&quot;2&quot;</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">prim_sup</span><span class="p">]}},</span>
+    <span class="n">point_of_no_return</span><span class="p">,</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">stop</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">purge</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">ch3</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">load</span><span class="p">,[</span><span class="n">ch_app</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">start</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">permanent</span><span class="p">]}}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="s">&quot;1&quot;</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">prim_sup</span><span class="p">]}},</span>
+    <span class="n">point_of_no_return</span><span class="p">,</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">stop</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">unload</span><span class="p">,[</span><span class="n">ch_app</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">ch3</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">purge</span><span class="p">,[</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">ch3</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">purge</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">start</span><span class="p">,[</span><span class="n">prim_app</span><span class="p">,</span><span class="n">permanent</span><span class="p">]}}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id20">
+<h3>督程变更<a class="headerlink" href="#id20" title="Permalink to this headline">¶</a></h3>
+<p>4.b. 另一种方法是通过组合给 <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 添加和删除子进程的指令和加载/卸载所有 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 代码和应用规格的指令，来启动应用（在降级的情况下是停止）。</p>
+<p>这次还是要手工创建 <tt class="docutils literal"><span class="pre">relup</span></tt> 文件。你重头写或者编辑生成的版本都可以。首先，在更新 <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 之前，载入 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的所有代码并加载应用规格。当降级时， <tt class="docutils literal"><span class="pre">prim_sup</span></tt> 应该先被更新，在 <tt class="docutils literal"><span class="pre">ch_app</span></tt> 的代码和应用规格卸载之前。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;B&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">ch_app</span><span class="p">,</span><span class="s">&quot;1&quot;</span><span class="p">,[</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">ch3</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="s">&quot;2&quot;</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]}},</span>
+    <span class="n">point_of_no_return</span><span class="p">,</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">ch3</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">load</span><span class="p">,[</span><span class="n">ch_app</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">suspend</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">code_change</span><span class="p">,</span><span class="n">up</span><span class="p">,[{</span><span class="n">prim_sup</span><span class="p">,[]}]},</span>
+    <span class="p">{</span><span class="n">resume</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">supervisor</span><span class="p">,</span><span class="n">restart_child</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">ch_sup</span><span class="p">]}}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[{</span><span class="n">load_object_code</span><span class="p">,{</span><span class="n">prim_app</span><span class="p">,</span><span class="s">&quot;1&quot;</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]}},</span>
+    <span class="n">point_of_no_return</span><span class="p">,</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">supervisor</span><span class="p">,</span><span class="n">terminate_child</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">ch_sup</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">supervisor</span><span class="p">,</span><span class="n">delete_child</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">ch_sup</span><span class="p">]}},</span>
+    <span class="p">{</span><span class="n">suspend</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">load</span><span class="p">,{</span><span class="n">prim_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">code_change</span><span class="p">,</span><span class="n">down</span><span class="p">,[{</span><span class="n">prim_sup</span><span class="p">,[]}]},</span>
+    <span class="p">{</span><span class="n">resume</span><span class="p">,[</span><span class="n">prim_sup</span><span class="p">]},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">remove</span><span class="p">,{</span><span class="n">ch3</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">,</span><span class="n">brutal_purge</span><span class="p">}},</span>
+    <span class="p">{</span><span class="n">purge</span><span class="p">,[</span><span class="n">ch_sup</span><span class="p">,</span><span class="n">ch3</span><span class="p">]},</span>
+    <span class="p">{</span><span class="nb">apply</span><span class="p">,{</span><span class="n">application</span><span class="p">,</span><span class="n">unload</span><span class="p">,[</span><span class="n">ch_app</span><span class="p">]}}]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="erlang">
+<h2>变更非Erlang代码<a class="headerlink" href="#erlang" title="Permalink to this headline">¶</a></h2>
+<p>变更用Erlang之外的编程语言所写的程序的代码，比如一个端口程序，是和应用紧密相关的，OTP没有为此提供特别的支持。</p>
+<p>例如，更改端口程序的代码：假设控制该port的Erlang进程是一个 gen_server <tt class="docutils literal"><span class="pre">portc</span></tt> 同时该端口是在回调函数 <tt class="docutils literal"><span class="pre">init/1</span></tt> 中打开的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(...)</span> <span class="o">-&gt;</span>
+    <span class="p">...,</span>
+    <span class="nv">PortPrg</span> <span class="o">=</span> <span class="nn">filename</span><span class="p">:</span><span class="n">join</span><span class="p">(</span><span class="nn">code</span><span class="p">:</span><span class="n">priv_dir</span><span class="p">(</span><span class="nv">App</span><span class="p">),</span> <span class="s">&quot;portc&quot;</span><span class="p">),</span>
+    <span class="nv">Port</span> <span class="o">=</span> <span class="nb">open_port</span><span class="p">({</span><span class="nb">spawn</span><span class="p">,</span><span class="nv">PortPrg</span><span class="p">},</span> <span class="p">[...]),</span>
+    <span class="p">...,</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nl">#state</span><span class="p">{</span><span class="n">port</span><span class="o">=</span><span class="nv">Port</span><span class="p">,</span> <span class="p">...}}.</span>
+</pre></div>
+</div>
+<p>如果要更新端口程序，那么我们可以扩展gen_server的代码，加入一个关闭旧端口并打开新端口。（如果必要的话，gen_server可以先从端口程序请求需要保存的数据，然后将这些数据传送到新的端口中）：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">code_change</span><span class="p">(_</span><span class="nv">OldVsn</span><span class="p">,</span> <span class="nv">State</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">State</span><span class="nl">#state.port</span> <span class="o">!</span> <span class="n">close</span><span class="p">,</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="nv">Port</span><span class="p">,</span><span class="n">close</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="n">true</span>
+    <span class="k">end</span><span class="p">,</span>
+    <span class="nv">PortPrg</span> <span class="o">=</span> <span class="nn">filename</span><span class="p">:</span><span class="n">join</span><span class="p">(</span><span class="nn">code</span><span class="p">:</span><span class="n">priv_dir</span><span class="p">(</span><span class="nv">App</span><span class="p">),</span> <span class="s">&quot;portc&quot;</span><span class="p">),</span>
+    <span class="nv">Port</span> <span class="o">=</span> <span class="nb">open_port</span><span class="p">({</span><span class="nb">spawn</span><span class="p">,</span><span class="nv">PortPrg</span><span class="p">},</span> <span class="p">[...]),</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nl">#state</span><span class="p">{</span><span class="n">port</span><span class="o">=</span><span class="nv">Port</span><span class="p">,</span> <span class="p">...}}.</span>
+</pre></div>
+</div>
+<p>在 <tt class="docutils literal"><span class="pre">.app</span></tt> 文件中更新应用版本并编写一个 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">[</span><span class="s">&quot;2&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">portc</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span><span class="n">port</span><span class="p">}}]}],</span>
+ <span class="p">[{</span><span class="s">&quot;1&quot;</span><span class="p">,</span> <span class="p">[{</span><span class="n">update</span><span class="p">,</span> <span class="n">portc</span><span class="p">,</span> <span class="p">{</span><span class="n">advanced</span><span class="p">,</span><span class="n">port</span><span class="p">}}]}]</span>
+<span class="p">].</span>
+</pre></div>
+</div>
+<p>确保C程序所在的 <tt class="docutils literal"><span class="pre">priv</span></tt> 目录也被包含在了新的发布包中：</p>
+<div class="highlight-python"><pre>1&gt; systools:make_tar("my_release", [{dirs,[priv]}]).
+...</pre>
+</div>
+</div>
+<div class="section" id="id21">
+<h2>模拟器重启<a class="headerlink" href="#id21" title="Permalink to this headline">¶</a></h2>
+<p>如果模拟器需要被重启，只要手工创建一个非常简单的 <tt class="docutils literal"><span class="pre">.relup</span></tt> 文件：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="s">&quot;B&quot;</span><span class="p">,</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[</span><span class="n">restart_new_emulator</span><span class="p">]}],</span>
+ <span class="p">[{</span><span class="s">&quot;A&quot;</span><span class="p">,</span>
+   <span class="p">[],</span>
+   <span class="p">[</span><span class="n">restart_new_emulator</span><span class="p">]}]</span>
+<span class="p">}.</span>
+</pre></div>
+</div>
+<p>这样，就可以使用自带自动打包、解包、自动路径更新等等的发布处理器框架而无需指定 <tt class="docutils literal"><span class="pre">.appup</span></tt> 文件。</p>
+<p>如果在安装新的发布版之前，要进程某些持久数据的转换——比如数据库内容，其指令可以直接添加到该 <tt class="docutils literal"><span class="pre">.relup</span></tt> 文件中。</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">Appup Cookbook</a><ul>
+<li><a class="reference external" href="#id2">变更功能模块</a></li>
+<li><a class="reference external" href="#id3">变更驻留模块</a></li>
+<li><a class="reference external" href="#id4">更改回调模块</a></li>
+<li><a class="reference external" href="#id5">变更内部状态</a></li>
+<li><a class="reference external" href="#id6">模块依赖性</a></li>
+<li><a class="reference external" href="#id7">变更特殊进程的代码</a></li>
+<li><a class="reference external" href="#id8">变更督程</a><ul>
+<li><a class="reference external" href="#id9">变更属性</a></li>
+<li><a class="reference external" href="#id10">变更子进程规格</a></li>
+<li><a class="reference external" href="#id11">添加和删除子进程</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#id12">添加或删除模块</a></li>
+<li><a class="reference external" href="#id13">启动或终止进程</a></li>
+<li><a class="reference external" href="#id14">添加或移除应用</a></li>
+<li><a class="reference external" href="#id15">重启应用</a></li>
+<li><a class="reference external" href="#id16">变更应用规格</a></li>
+<li><a class="reference external" href="#id17">变更应用配置</a></li>
+<li><a class="reference external" href="#id18">变更被包含的应用</a><ul>
+<li><a class="reference external" href="#id19">应用重启</a></li>
+<li><a class="reference external" href="#id20">督程变更</a></li>
+</ul>
+</li>
+<li><a class="reference external" href="#erlang">变更非Erlang代码</a></li>
+<li><a class="reference external" href="#id21">模拟器重启</a></li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="release_handling.html" title="previous chapter">发布处理</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/appup_cookbook.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="release_handling.html" title="发布处理"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 02, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Gen_Fsm行为 &mdash; Erlang OTP Design Principles v0.1 documentation</title>
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_MODINDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="top" title="Erlang OTP Design Principles v0.1 documentation" href="index.html" />
+    <link rel="next" title="Gen_Event行为" href="gen_event.html" />
+    <link rel="prev" title="Gen_Server行为" href="gen_server.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_event.html" title="Gen_Event行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="gen_server.html" title="Gen_Server行为"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  
+  <div class="section" id="gen-fsm">
+<h1>Gen_Fsm行为<a class="headerlink" href="#gen-fsm" title="Permalink to this headline">¶</a></h1>
+<p>本章应该结合 <em>gen_fsm(3)</em> 来阅读，其中面有所有接口函数和回调函数的详细说明。</p>
+<div class="section" id="id1">
+<h2>有限状态机<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h2>
+<p>一个有限状态机FSM，可以用一个关系式来描述：</p>
+<blockquote>
+State(S) x Event(E) -&gt; Actions(A), State(S’)</blockquote>
+<p>这些关系解释如下：</p>
+<p>如果我们处在状态 <tt class="docutils literal"><span class="pre">S</span></tt> 并且事件 <tt class="docutils literal"><span class="pre">E</span></tt> 发生了，那么，我们需要执行动作 <tt class="docutils literal"><span class="pre">A</span></tt> ，并且转变到状态 <tt class="docutils literal"><span class="pre">S'</span></tt> 。</p>
+<p>对于一个用 <tt class="docutils literal"><span class="pre">gen_fsm</span></tt> 行为实现的FSM来说，状态转换规则被写为符合如下约定的一系列Erlang函数：</p>
+<div class="highlight-erlang"><pre>StateName( Event, StateData ) -&gt;
+    .. 这里放动作的代码 ...
+    { next_state, StateName', StateData' }</pre>
+</div>
+</div>
+<div class="section" id="id2">
+<h2>例子<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h2>
+<p>一个带有密码锁的门可以被看作一个FSM。初始状态下，门是锁着的。一个人无论何时按下一个按钮都会产生一个事件。取决于之前哪些按钮被按下，当前序列可能是正确的、不完整、或者错误的。</p>
+<p>如果是正确的，那么门会打开30秒（30000ms）。如果是不完整的，那么等待按下另一个按钮。如果是错误的，那么我们重来，等待新的按钮序列。</p>
+<p>使用 <tt class="docutils literal"><span class="pre">gen_fsm</span></tt> 实现的密码锁可以得到以下回调模块：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">code_lock</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">gen_fsm</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">start_link</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">button</span><span class="o">/</span><span class="mi">1</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">,</span> <span class="n">locked</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">open</span><span class="o">/</span><span class="mi">2</span><span class="p">]).</span>
+
+<span class="nf">start_link</span><span class="p">(</span><span class="nv">Code</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">start_link</span><span class="p">({</span><span class="n">local</span><span class="p">,</span> <span class="n">code_lock</span><span class="p">},</span> <span class="n">code_lock</span><span class="p">,</span> <span class="nv">Code</span><span class="p">,</span> <span class="p">[]).</span>
+
+<span class="nf">button</span><span class="p">(</span><span class="nv">Digit</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">send_event</span><span class="p">(</span><span class="n">code_lock</span><span class="p">,</span> <span class="p">{</span><span class="n">button</span><span class="p">,</span> <span class="nv">Digit</span><span class="p">}).</span>
+
+<span class="nf">init</span><span class="p">(</span><span class="nv">Code</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">}}.</span>
+
+<span class="nf">locked</span><span class="p">({</span><span class="n">button</span><span class="p">,</span> <span class="nv">Digit</span><span class="p">},</span> <span class="p">{</span><span class="nv">SoFar</span><span class="p">,</span> <span class="nv">Code</span><span class="p">})</span> <span class="o">-&gt;</span>
+    <span class="k">case</span> <span class="p">[</span><span class="nv">Digit</span><span class="p">|</span><span class="nv">SoFar</span><span class="p">]</span> <span class="k">of</span>
+        <span class="nv">Code</span> <span class="o">-&gt;</span>
+            <span class="n">do_unlock</span><span class="p">(),</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">open</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">},</span> <span class="mi">3000</span><span class="p">};</span>
+        <span class="nv">Incomplete</span> <span class="k">when</span> <span class="nb">length</span><span class="p">(</span><span class="nv">Incomplete</span><span class="p">)</span><span class="o">&lt;</span><span class="nb">length</span><span class="p">(</span><span class="nv">Code</span><span class="p">)</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{</span><span class="nv">Incomplete</span><span class="p">,</span> <span class="nv">Code</span><span class="p">}};</span>
+        <span class="p">_</span><span class="nv">Wrong</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">}}</span>
+    <span class="k">end</span><span class="p">.</span>
+
+<span class="nf">open</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">do_lock</span><span class="p">(),</span>
+    <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="nv">State</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>该代码将会在下一节中进行解释。</p>
+</div>
+<div class="section" id="id3">
+<h2>启动一个Gen_Fsm<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h2>
+<p>在上一节的例子中，该gen_fsm是通过调用 <tt class="docutils literal"><span class="pre">code_lock:start_link(Code)</span></tt> 来启动的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">start_link</span><span class="p">(</span><span class="nv">Code</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">start_link</span><span class="p">({</span><span class="n">local</span><span class="p">,</span> <span class="n">code_lock</span><span class="p">},</span> <span class="n">code_lock</span><span class="p">,</span> <span class="nv">Code</span><span class="p">,</span> <span class="p">[]).</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">start_link</span></tt> 调用函数 <tt class="docutils literal"><span class="pre">gen_fsm:start_link/4</span></tt>。该函数产生并连接到一个新的gen_fsm进程.</p>
+<ul class="simple">
+<li>第一个参数 <tt class="docutils literal"><span class="pre">{local,</span> <span class="pre">code_lock}</span></tt> 指明了名字。在这里，gen_fsm会在本地注册为 <tt class="docutils literal"><span class="pre">code_lock</span></tt> 。
+如果名字被省略了，那么将不会注册gen_fsm。这样就必须使用它的pid。名字也可以这样写 <tt class="docutils literal"><span class="pre">{global,</span> <span class="pre">Name}</span></tt>, 这样，gen_fsm就是使用 <tt class="docutils literal"><span class="pre">global_register_name/2</span></tt> 来注册了。</li>
+<li>第二个参数 <tt class="docutils literal"><span class="pre">code_lock</span></tt> 是回调模块的名字，也就是回调函数所位于的模块。
+在这个例子里面，接口函数(<tt class="docutils literal"><span class="pre">start_link</span></tt> 和 <tt class="docutils literal"><span class="pre">button</span></tt>)是位于和回调函数(<tt class="docutils literal"><span class="pre">init</span></tt>, <tt class="docutils literal"><span class="pre">locked</span></tt> 和 <tt class="docutils literal"><span class="pre">open</span></tt>)相同的模块中。这一般是较好的编程实践，让一个进程对应的代码包含在一个模块里面。</li>
+<li>第三个参数 <tt class="docutils literal"><span class="pre">Code</span></tt> 是一个值，将被原封不动传递给回调函数 <tt class="docutils literal"><span class="pre">init</span></tt> 。这里， <tt class="docutils literal"><span class="pre">init</span></tt> 得到锁的正确代码做为内部数据。</li>
+<li>第四个参数 [] 是一个选项的列表。参见 <em>gen_fsm(3)</em> 来找到可用的选项。</li>
+</ul>
+<p>如果名称注册成功，新的gen_fsm进程会调用回调函数 <tt class="docutils literal"><span class="pre">code_lock:init(Code)</span></tt>。这个函数要返回 <tt class="docutils literal"><span class="pre">{ok,</span> <span class="pre">StateName,</span> <span class="pre">StateData}</span></tt>，其中 <tt class="docutils literal"><span class="pre">StateName</span></tt> 是gen_fsm初始状态的名字。在这个例子里面是 <tt class="docutils literal"><span class="pre">locked</span></tt>，假设门一开始是锁着的。 <tt class="docutils literal"><span class="pre">StateData</span></tt> 是gen_fsm的内部状态。（对于gen_fsm来说，内部状态一般是指“状态数据”(state data)，以区别于状态机的状态）。在这个例子里面，状态数据（state data）是到目前为止的按钮的顺序（开始的时候为空）和锁的正确密码顺序。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(</span> <span class="nv">Code</span> <span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">}}.</span>
+</pre></div>
+</div>
+<p>注意<tt class="docutils literal"><span class="pre">gen_fsm:start_link</span></tt>是同步的。它只有到gen_fsm已经完成初始化并且可以接收通知的时候才返回。</p>
+<p>如果gen_fsm是一个监毒树的一部分的话——即由督程启动的——必须使用 <tt class="docutils literal"><span class="pre">gen_fsm:start_link</span></tt> 。有另外一个函数 <tt class="docutils literal"><span class="pre">gen_fsm:start</span></tt> 来启动一个独立的gen_fsm——即，gen_fsm不属于监督树的一部分。</p>
+</div>
+<div class="section" id="id4">
+<h2>事件通知<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h2>
+<p>通知密码锁一个按钮被按下的事件是使用 <tt class="docutils literal"><span class="pre">gen_fsm:send_event/2</span></tt> 来实现的：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">button</span><span class="p">(</span><span class="nv">Digit</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">send_event</span><span class="p">(</span><span class="n">code_lock</span><span class="p">,</span> <span class="p">{</span><span class="n">button</span><span class="p">,</span> <span class="nv">Digit</span><span class="p">}).</span>
+</pre></div>
+</div>
+<p><tt class="docutils literal"><span class="pre">code_lock</span></tt> 是gen_fsm的名字并且必须与启动时候所使用的名字一致。<tt class="docutils literal"><span class="pre">{button，Digit}</span></tt>是实际的事件。</p>
+<p>事件被做为消息发送给gen_fsm。当gen_fsm收到这个事件的时候，就会调用StateName( Event, StateData )，该函数需要返回一个元组{ next_state, StateName1, StateData1}. StateName是当前状态的名字，而StateName1是要转到的下一个状态的名字。StateData1是gen_fsm的状态数据的新的值。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">locked</span><span class="p">({</span><span class="n">button</span><span class="p">,</span> <span class="nv">Digit</span><span class="p">},</span> <span class="p">{</span><span class="nv">SoFar</span><span class="p">,</span> <span class="nv">Code</span><span class="p">})</span> <span class="o">-&gt;</span>
+    <span class="k">case</span> <span class="p">[</span><span class="nv">Digit</span><span class="p">|</span><span class="nv">SoFar</span><span class="p">]</span> <span class="k">of</span>
+        <span class="nv">Code</span> <span class="o">-&gt;</span>
+            <span class="n">do_unlock</span><span class="p">(),</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">open</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">},</span> <span class="mi">30000</span><span class="p">};</span>
+        <span class="nv">Incomplete</span> <span class="k">when</span> <span class="nb">length</span><span class="p">(</span><span class="nv">Incomplete</span><span class="p">)</span><span class="o">&lt;</span><span class="nb">length</span><span class="p">(</span><span class="nv">Code</span><span class="p">)</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{</span><span class="nv">Incomplete</span><span class="p">,</span> <span class="nv">Code</span><span class="p">}};</span>
+        <span class="p">_</span><span class="nv">Wrong</span> <span class="o">-&gt;</span>
+            <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">}};</span>
+    <span class="k">end</span><span class="p">.</span>
+
+<span class="nf">open</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">do_lock</span><span class="p">(),</span>
+    <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="nv">State</span><span class="p">}.</span>
+</pre></div>
+</div>
+<p>如果门是锁着的，且按下了按钮，那么，到目前位置所有的按钮序列就会与密码锁正确的密码进行比较，然后根据比较的结果，要么门是解锁了gen_fsm进入打开的状态 <tt class="docutils literal"><span class="pre">open</span></tt> ，或者是仍然是处于锁着的状态 <tt class="docutils literal"><span class="pre">locked</span></tt> 。</p>
+</div>
+<div class="section" id="id5">
+<h2>超时<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h2>
+<p>当一个正确的按钮顺序被按下之后，门会被打开，下面的元组就会从函数 <tt class="docutils literal"><span class="pre">locked/2</span></tt> 返回：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">open</span><span class="p">,</span> <span class="p">{[],</span> <span class="nv">Code</span><span class="p">},</span> <span class="mi">3000</span><span class="p">};</span>
+</pre></div>
+</div>
+<p>30000 是一个以毫秒为单位的超时值。30000ms，也就是30秒后，就会发生一个超时。然后 <tt class="docutils literal"><span class="pre">StateName(timeout，StateData)</span></tt> 就会被调用。在这个例子里面，当门处于状态 <tt class="docutils literal"><span class="pre">open</span></tt> （打开）30秒后就会发生超时。然后门又会被锁上：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">open</span><span class="p">(</span><span class="n">timeout</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">do_lock</span><span class="p">(),</span>
+    <span class="p">{</span><span class="n">next_state</span><span class="p">,</span> <span class="n">locked</span><span class="p">,</span> <span class="nv">State</span><span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id6">
+<h2>所有的状态事件<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h2>
+<p>有时候，在gen_fsm的任何状态都有可能有事件到达。除了可以用 <tt class="docutils literal"><span class="pre">gen_fsm:send_event/2</span></tt> 发送消息，并为每一个状态函数写一个子句来处理事件之外，还可以通过 <tt class="docutils literal"><span class="pre">gen_fsm:send_all_state_event/2</span></tt> 来发送消息，并用 <tt class="docutils literal"><span class="pre">Module:handle_event/3</span></tt> 来处理。</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">code_lock</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">stop</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">...</span>
+
+<span class="nf">stop</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">send_all_state_event</span><span class="p">(</span><span class="n">code_lock</span><span class="p">,</span> <span class="n">stop</span><span class="p">).</span>
+
+<span class="p">...</span>
+
+<span class="nf">handle_event</span><span class="p">(</span><span class="n">stop</span><span class="p">,</span> <span class="p">_</span><span class="nv">StateName</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">stop</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">}.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id7">
+<h2>停止<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="id8">
+<h3>在监督树中<a class="headerlink" href="#id8" title="Permalink to this headline">¶</a></h3>
+<p>如果gen_fsm是监督树的一部分，那么不需要停止函数。它的督程会自动停止它。具体如何进行是通过督程中的<a class="reference external" href="supervisor.html#shutdown"><em>关闭策略</em></a>集来定义。</p>
+<p>如果需要在终止前先进行清除操作，那么关闭策略必须是一个超时值，并且，gen_fsm必须在 <tt class="docutils literal"><span class="pre">init</span></tt> 函数里面设置成捕捉退出信号。当被要求关闭时，gen_fsm会调用回调函数 <tt class="docutils literal"><span class="pre">terminate(shutdown,</span> <span class="pre">StateName,</span> <span class="pre">StateData)</span></tt>:</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="nf">init</span><span class="p">(</span><span class="nv">Args</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">...,</span>
+    <span class="nb">process_flag</span><span class="p">(</span><span class="n">trap_exit</span><span class="p">,</span> <span class="n">true</span><span class="p">),</span>
+    <span class="p">...,</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">StateName</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">}.</span>
+
+<span class="p">...</span>
+
+<span class="nf">terminate</span><span class="p">(</span><span class="n">shutdown</span><span class="p">,</span> <span class="nv">StateName</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">..</span><span class="n">code</span> <span class="n">for</span> <span class="n">cleaning</span> <span class="n">up</span> <span class="n">here</span><span class="p">..</span>
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id9">
+<h3>独立的Gen_Fsm<a class="headerlink" href="#id9" title="Permalink to this headline">¶</a></h3>
+<p>如果gen_fsm不是监督树的一部分，那么一个停止函数是有用的，例如：</p>
+<div class="highlight-erlang"><div class="highlight"><pre><span class="p">...</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">stop</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">...</span>
+
+<span class="nf">stop</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_fsm</span><span class="p">:</span><span class="n">send_all_state_event</span><span class="p">(</span><span class="n">code_lock</span><span class="p">,</span> <span class="n">stop</span><span class="p">).</span>
+<span class="p">...</span>
+
+<span class="nf">handle_event</span><span class="p">(</span><span class="n">stop</span><span class="p">,</span> <span class="p">_</span><span class="nv">StateName</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">stop</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="nv">StateData</span><span class="p">}.</span>
+
+<span class="p">...</span>
+
+<span class="nf">terminate</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="p">_</span><span class="nv">StateName</span><span class="p">,</span> <span class="p">_</span><span class="nv">StateData</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+<p>处理 <tt class="docutils literal"><span class="pre">stop</span></tt> 事件的回调函数返回一个元组 <tt class="docutils literal"><span class="pre">{stop，normal，StateData1}</span></tt>，这里的 <tt class="docutils literal"><span class="pre">normal</span></tt> 指明了这是一个正常的终止，同时 <tt class="docutils literal"><span class="pre">StateData1</span></tt> 是gen_fsm状态数据的新值。这会使gen_fsm去调用terminate(normal, StateName, StateData1 )，然后优雅的终止。</p>
+</div>
+<div class="section" id="id10">
+<h3>处理其他消息<a class="headerlink" href="#id10" title="Permalink to this headline">¶</a></h3>
+<p>如果gen_fsm需要接收事件之外的消息，那么必须实现回调函数 <tt class="docutils literal"><span class="pre">handle_info(Info,</span> <span class="pre">StateName,</span> <span class="pre">StateData)</span></tt> 来处理这些消息。其他的消息比如退出消息，如果gen_fsm是联接到其他的进程（非督程）的，并且需要捕获退出信号。</p>
+<div class="highlight-erlang"><pre>handle_info({’EXIT’, Pid, Reason}, StateName, StateData) -&gt;
+    ..code to handle exits here..
+    {next_state, StateName1, StateData1}.</pre>
+</div>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+            <h3><a href="index.html">Table Of Contents</a></h3>
+            <ul>
+<li><a class="reference external" href="">Gen_Fsm行为</a><ul>
+<li><a class="reference external" href="#id1">有限状态机</a></li>
+<li><a class="reference external" href="#id2">例子</a></li>
+<li><a class="reference external" href="#id3">启动一个Gen_Fsm</a></li>
+<li><a class="reference external" href="#id4">事件通知</a></li>
+<li><a class="reference external" href="#id5">超时</a></li>
+<li><a class="reference external" href="#id6">所有的状态事件</a></li>
+<li><a class="reference external" href="#id7">停止</a><ul>
+<li><a class="reference external" href="#id8">在监督树中</a></li>
+<li><a class="reference external" href="#id9">独立的Gen_Fsm</a></li>
+<li><a class="reference external" href="#id10">处理其他消息</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            <h4>Previous topic</h4>
+            <p class="topless"><a href="gen_server.html" title="previous chapter">Gen_Server行为</a></p>
+            <h4>Next topic</h4>
+            <p class="topless"><a href="gen_event.html" title="next chapter">Gen_Event行为</a></p>
+            <h3>This Page</h3>
+            <ul class="this-page-menu">
+              <li><a href="_sources/gen_fsm.txt">Show Source</a></li>
+            </ul>
+          <h3>Quick search</h3>
+            <form class="search" action="search.html" method="get">
+              <input type="text" name="q" size="18" /> <input type="submit" value="Go" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </form>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="gen_event.html" title="Gen_Event行为"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="gen_server.html" title="Gen_Server行为"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">Erlang OTP Design Principles v0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      &copy; Copyright 2009, ShiningRay.
+      Last updated on Feb 01, 2009.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 0.5.1.
+    </div>
+  </body>
+</html>

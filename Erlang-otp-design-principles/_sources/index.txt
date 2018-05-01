@@ -1,0 +1,36 @@
+.. Erlang OTP Design Principles documentation master file, created by sphinx-quickstart on Mon Jan 26 00:28:11 2009.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+欢迎阅读 Erlang OTP 设计原理文档！
+========================================================
+
+* 原文： `OTP Design Principles <http://www.erlang.org/doc/design_principles/part_frame.html>`_ 
+* 翻译： `ShiningRay <http://shiningray.cn>`_
+
+有任何问题请到 `这里 <http://shiningray.cn/otp-design-principles.html>`_ 留言。
+
+目录
+
+.. toctree::
+   :maxdepth: 2
+
+   overview
+   gen_server
+   gen_fsm
+   gen_event
+   supervisor
+   sys_and_proc_lib
+   applications
+   included_applications
+   distributed_applications
+   releases
+   release_handling
+   appup_cookbook
+
+索引和表格
+=================
+
+* :ref:`genindex`
+* :ref:`search`
+

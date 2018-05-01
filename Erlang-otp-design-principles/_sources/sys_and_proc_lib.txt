@@ -1,0 +1,394 @@
+.. _sys-proc_lib:
+
+Sys与Proc_Lib
+=============
+``sys`` 模块包含了简单调试用行为实现的进程的函数。
+
+还有一些函数——要结合模块 ``proc_lib`` 中的函数——可以用于实现一种\ **特殊进程**\ ，遵照OTP设计原则但不使用标准行为。它们也可以用于实现用户自定义的（非标准）行为。
+
+``sys`` 和 ``proc_lib`` 都属于 STDLIB应用。
+
+简单调试
+--------
+``sys`` 模块包含了简单调试用行为实现的进程的函数。我们用来自 :ref:`gen_event` 一章中的 ``code_lock`` 例子来进行解释：
+
+::
+
+    % erl
+    Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+    Eshell V5.2.3.6  (abort with ^G)
+    1> code_lock:start_link([1,2,3,4]).
+    {ok,<0.32.0>}
+    2> sys:statistics(code_lock, true).
+    ok
+    3> sys:trace(code_lock, true).
+    ok
+    4> code_lock:button(4).
+    *DBG* code_lock got event {button,4} in state closed
+    ok
+    *DBG* code_lock switched to state closed
+    5> code_lock:button(3).
+    *DBG* code_lock got event {button,3} in state closed
+    ok
+    *DBG* code_lock switched to state closed
+    6> code_lock:button(2).
+    *DBG* code_lock got event {button,2} in state closed
+    ok
+    *DBG* code_lock switched to state closed
+    7> code_lock:button(1).
+    *DBG* code_lock got event {button,1} in state closed
+    ok
+    OPEN DOOR
+    *DBG* code_lock switched to state open
+    *DBG* code_lock got event timeout in state open
+    CLOSE DOOR
+    *DBG* code_lock switched to state closed
+    8> sys:statistics(code_lock, get).
+    {ok,[{start_time,{{2003,6,12},{14,11,40}}},
+         {current_time,{{2003,6,12},{14,12,14}}},
+         {reductions,333},
+         {messages_in,5},
+         {messages_out,0}]}
+    9> sys:statistics(code_lock, false).
+    ok
+    10> sys:trace(code_lock, false).
+    ok
+    11> sys:get_status(code_lock).
+    {status,<0.32.0>,
+            {module,gen_fsm},
+            [[{'$ancestors',[<0.30.0>]},
+              {'$initial_call',{gen,init_it,
+                                    [gen_fsm,<0.30.0>,<0.30.0>,
+                                     {local,code_lock},
+                                     code_lock,
+                                     [1,2,3,4],
+                                     []]}}],
+             running,<0.30.0>,[],
+             [code_lock,closed,{[],[1,2,3,4]},code_lock,infinity]]}
+
+特殊进程
+--------
+本节将描述如何编写符合OTP设计原理而又不使用标准行为的进程。这样的一种进程要：
+
+* 以一种可以让进程放入监督树的方式启动，
+* 支持 ``sys`` 的 :ref:`调试功能 <debug>` ，以及
+* 注意 :ref:`系统消息 <msg>` 。
+
+系统消息是用于监督树中的带有特殊含义的消息。典型的系统消息有跟踪输出的请求、挂起和恢复进程执行的请求（用于发布处理中）。使用标准行为实现的进程会自动处理这些消息。
+
+例子
+~~~~
+来自 :ref:`概述 <overview>` 一章中的简单服务器，如果使用 ``sys`` 和 ``proc_lib`` 实现并放入一个监督树，则为：
+
+.. code-block:: erlang
+
+    -module(ch4).
+    -export([start_link/0]).
+    -export([alloc/0, free/1]).
+    -export([init/1]).
+    -export([system_continue/3, system_terminate/4,
+             write_debug/3]).
+
+    start_link() ->
+        proc_lib:start_link(ch4, init, [self()]).
+
+    alloc() ->
+        ch4 ! {self(), alloc},
+        receive
+            {ch4, Res} ->
+                Res
+        end.
+
+    free(Ch) ->
+        ch4 ! {free, Ch},
+        ok.
+
+    init(Parent) ->
+        register(ch4, self()),
+        Chs = channels(),
+        Deb = sys:debug_options([]),
+        proc_lib:init_ack(Parent, {ok, self()}),
+        loop(Chs, Parent, Deb).
+
+    loop(Chs, Parent, Deb) ->
+        receive
+            {From, alloc} ->
+                Deb2 = sys:handle_debug(Deb, {ch4, write_debug},
+                                        ch4, {in, alloc, From}),
+                {Ch, Chs2} = alloc(Chs),
+                From ! {ch4, Ch},
+                Deb3 = sys:handle_debug(Deb2, {ch4, write_debug},
+                                        ch4, {out, {ch4, Ch}, From}),
+                loop(Chs2, Parent, Deb3);
+            {free, Ch} ->
+                Deb2 = sys:handle_debug(Deb, {ch4, write_debug},
+                                        ch4, {in, {free, Ch}}),
+                Chs2 = free(Ch, Chs),
+                loop(Chs2, Parent, Deb2);
+
+            {system, From, Request} ->
+                sys:handle_system_msg(Request, From, Parent,
+                                      ch4, Deb, Chs)
+        end.
+
+    system_continue(Parent, Deb, Chs) ->
+        loop(Chs, Parent, Deb).
+
+    system_terminate(Reason, Parent, Deb, Chs) ->
+        exit(Reason).
+
+    write_debug(Dev, Event, Name) ->
+        io:format(Dev, "~p event = ~p~n", [Name, Event]).
+
+以及如何在 ``ch4`` 中使用 ``sys`` 中的简易调试函数：
+
+::
+
+    % erl
+    Erlang (BEAM) emulator version 5.2.3.6 [hipe] [threads:0]
+
+    Eshell V5.2.3.6  (abort with ^G)
+    1> ch4:start_link().
+    {ok,<0.30.0>}
+    2> sys:statistics(ch4, true).
+    ok
+    3> sys:trace(ch4, true).
+    ok
+    4> ch4:alloc().
+    ch4 event = {in,alloc,<0.25.0>}
+    ch4 event = {out,{ch4,ch1},<0.25.0>}
+    ch1
+    5> ch4:free(ch1).
+    ch4 event = {in,{free,ch1}}
+    ok
+    6> sys:statistics(ch4, get).
+    {ok,[{start_time,{{2003,6,13},{9,47,5}}},
+         {current_time,{{2003,6,13},{9,47,56}}},
+         {reductions,109},
+         {messages_in,2},
+         {messages_out,1}]}
+    7> sys:statistics(ch4, false).
+    ok
+    8> sys:trace(ch4, false).
+    ok
+    9> sys:get_status(ch4).
+    {status,<0.30.0>,
+            {module,ch4},
+            [[{'$ancestors',[<0.25.0>]},{'$initial_call',{ch4,init,[<0.25.0>]}}],
+             running,<0.25.0>,[],
+             [ch1,ch2,ch3]]}
+
+启动进程
+--------
+要使用 ``proc_lib`` 模块中的某一个函数来启动进程。有好几个函数可以用，例如异步启动的 ``spawn_link/3,4`` 以及同步启动的 ``start_link/3,4,5`` 。
+
+使用这些函数中的任何一个启动的进程都会储存监督树所必须的信息，例如祖先和初始化调用的信息。
+
+另外，如果进程终止的原因不是 ``normal`` 或者 ``shutdown`` ，那么会生成一个崩溃报告（见SASL用户指南）。
+
+在上面的例子中，使用的是同步启动。进程通过调用 ``ch4:start_link()`` 来启动：
+
+.. code-block:: erlang
+
+    start_link() ->
+        proc_lib:start_link(ch4, init, [self()]).
+
+``ch4:start_link`` 调用了函数 ``proc_lib:start_link`` 。这个函数接受一个模块名称、一个函数名称和一个参数列表作为它的参数，并生成、联接到新的进程。新的进程通过执行指定的函数启动，在这个例子中是 ``ch4:init(Pid)`` ，其中 ``Pid`` 是第一个进程的pid（ ``self()`` ），也就是父进程。
+
+在 ``init`` ，要完成所有的初始化，包括名称的注册。新的进程还必须向父进程应答它已经被启动了：
+
+.. code-block:: erlang
+
+    init(Parent) ->
+        ...
+        proc_lib:init_ack(Parent, {ok, self()}),
+        loop(...).
+
+``proc_lib:start_link`` 是同步调用，直到 ``proc_lib:init_ack`` 被调用后才返回。
+
+.. _debug:
+
+调试
+~~~~
+要支持 ``sys`` 中的调试设备，我们需要一个\ **调试结构**\ ，即使用 ``sys:debug_option/1`` 初始化的一个值 ``Deb`` ：
+
+.. code-block:: erlang
+
+    init(Parent) ->
+        ...
+        Deb = sys:debug_option([]),
+        ...
+        loop(Chs, Parent, Deb).
+
+``sys:debug_option/1`` 接受一个选项列表作为参数。在这里，这个列表为空，表示初始的时候没有启动任何调试。可用的选项的信息参见 :manpage:`sys(3)` 。
+
+然后对于每一个我们要记录或跟踪的\ **系统事件**\ ，都需要调用以下函数。
+
+.. code-block:: erlang
+
+    sys:handle_debug(Deb, Func, Info, Event) => Deb1
+
+* ``Deb`` 是调试结构。
+* ``Func`` 是一个元组 {模块, 函数名}（\ ``{Module, Name}``\ ），或一个fun，必须指定一个用于格式化跟踪输出的（用户定义的）函数。对每一个系统事件，格式化函数的调用形式为 ``Module:Name(Dev, Event, Info)`` ，其中：
+
+  * ``Dev`` 是输出所打印的IO设备。参见 :manpage:`io(3)` 。
+  * ``Event`` 和 ``Info`` 是原样从 ``handle_debug`` 传递过来的。
+
+* ``Info`` 用于传递额外的信息给 ``Func`` ，它可以是任何值，会被原样传递过去。
+* ``Event`` 是系统事件。如何定义一个系统事件以及它应该如何表示，都是由用户来定义的，不过一般至少进来和出去的消息被认为是系统消息，相应由元组 ``{in,Msg[,From]}`` 和 ``{out,Msg,To}`` 来表示。
+
+``handle_debug`` 返回一个更新了的调试结构 ``Deb1`` 。
+
+在上面的例子， 每一个进来和出去的消息都调用了 ``handle_debug`` 。格式化函数 ``Func`` 是 ``ch4:write_debug/3`` 使用 ``io:format:/3`` 打印消息。
+
+.. code-block:: erlang
+
+    loop(Chs, Parent, Deb) ->
+        receive
+            {From, alloc} ->
+                Deb2 = sys:handle_debug(Deb, {ch4, write_debug},
+                                        ch4, {in, alloc, From}),
+                {Ch, Chs2} = alloc(Chs),
+                From ! {ch4, Ch},
+                Deb3 = sys:handle_debug(Deb2, {ch4, write_debug},
+                                        ch4, {out, {ch4, Ch}, From}),
+                loop(Chs2, Parent, Deb3);
+            {free, Ch} ->
+                Deb2 = sys:handle_debug(Deb, {ch4, write_debug},
+                                        ch4, {in, {free, Ch}}),
+                Chs2 = free(Ch, Chs),
+                loop(Chs2, Parent, Deb2);
+            ...
+        end.
+
+    write_debug(Dev, Event, Name) ->
+        io:format(Dev, "~p event = ~p~n", [Name, Event]).
+
+.. _msg:
+
+处理系统消息
+~~~~~~~~~~~~
+接收到的 **系统消息** 形如：
+
+.. code-block:: erlang
+
+    {system, From, Request}
+
+这些消息的内容和含义无须由进程来解释，应交由以下函数：
+
+.. code-block:: erlang
+
+    sys:handle_system_msg(Request, From, Parent, Module, Deb, State)
+
+这个函数不会返回。它会处理系统消息然后，如果需要进程继续执行则调用：
+
+.. code-block:: erlang
+
+    Module:system_continue(Parent, Deb, State)
+
+如果进程要终止则执行：
+
+.. code-block:: erlang
+
+    Module:system_terminate(Reason, Parent, Deb, State)
+
+注意监督树中的进程要用和父进程一样的理由终止。
+
+* ``Request`` 和 ``From`` 必须原样从系统消息传递给 ``handle_system_msg`` 调用。
+* ``Parent`` 是父进程的pid。
+* ``Module`` 是模块的名字。
+* ``Deb`` 是调试结构。
+* ``State`` 是描述初始状态的值并且会被传递给 ``system_continue``/``system_terminate`` 。
+
+在前面的例子中：
+
+.. code-block:: erlang
+
+    loop(Chs, Parent, Deb) ->
+        receive
+            ...
+
+            {system, From, Request} ->
+                sys:handle_system_msg(Request, From, Parent,
+                                      ch4, Deb, Chs)
+        end.
+
+    system_continue(Parent, Deb, Chs) ->
+        loop(Chs, Parent, Deb).
+
+    system_terminate(Reason, Parent, Deb, Chs) ->
+        exit(Reason).
+
+如果特殊进程被被设置为捕获退出，那么要注意如果父进程终止了，它也要以同样的理由终止。
+
+.. code-block:: erlang
+
+    init(...) ->
+        ...,
+        process_flag(trap_exit, true),
+        ...,
+        loop(...).
+
+    loop(...) ->
+        receive
+            ...
+
+            {'EXIT', Parent, Reason} ->
+                ..maybe some cleaning up here..
+                exit(Reason);
+            ...
+        end.
+
+用户定义的行为
+--------------
+要实现一个用户定义的行为，可以编写和特殊进程类似的代码但要调用回掉模块中的函数来处理特殊任务。
+
+如果想要编译器对缺少的回掉函数提出警告——也就是OTP行为的作为，那么需要实现和输出下面这个函数：
+
+.. code-block:: erlang
+
+    behaviour_info(callbacks) ->
+        [{Name1, Arity1},...,{NameN,ArityN}].
+
+其中每个 ``{Name, Arity}`` 指定了一个回调函数的名称和基数。
+
+当编译器在某个模块 ``Mod`` 中 遇到了模块属性 ``-behaviour(Behaviour).`` 后，它会调用 ``Behaviour:behaviour_info(callbacks)`` 并且将结果与从 ``Mod`` 实际导出的函数集相对比，然后如果有任何缺少的回调函数则给出警告。
+
+例子：
+
+.. code-block:: erlang
+
+    %% User-defined behaviour module
+    -module(simple_server).
+    -export([start_link/2,...]).
+    -export([behaviour_info/1]).
+
+    behaviour_info(callbacks) ->
+        [{init,1},
+         {handle_req,1},
+         {terminate,0}].
+
+    start_link(Name, Module) ->
+        proc_lib:start_link(?MODULE, init, [self(), Name, Module]).
+
+    init(Parent, Name, Module) ->
+        register(Name, self()),
+        ...,
+        Dbg = sys:debug_options([]),
+        proc_lib:init_ack(Parent, {ok, self()}),
+        loop(Parent, Module, Deb, ...).
+
+    ...
+
+回调模块中：
+
+.. code-block:: erlang
+
+    -module(db).
+    -behaviour(simple_server).
+
+    -export([init/0, handle_req/1, terminate/0]).
+
+    ...
+

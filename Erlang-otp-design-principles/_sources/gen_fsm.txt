@@ -1,0 +1,230 @@
+Gen_Fsm行为
+===========
+
+本章应该结合 :manpage:`gen_fsm(3)` 来阅读，其中面有所有接口函数和回调函数的详细说明。
+
+有限状态机
+----------
+
+一个有限状态机FSM，可以用一个关系式来描述：
+
+    State(S) x Event(E) -> Actions(A), State(S’)
+
+这些关系解释如下：
+
+如果我们处在状态 ``S`` 并且事件 ``E`` 发生了，那么，我们需要执行动作 ``A`` ，并且转变到状态 ``S'`` 。
+
+对于一个用 ``gen_fsm`` 行为实现的FSM来说，状态转换规则被写为符合如下约定的一系列Erlang函数：
+
+.. code-block:: erlang
+
+    StateName( Event, StateData ) ->
+        .. 这里放动作的代码 ...
+        { next_state, StateName', StateData' }
+
+例子
+----
+
+一个带有密码锁的门可以被看作一个FSM。初始状态下，门是锁着的。一个人无论何时按下一个按钮都会产生一个事件。取决于之前哪些按钮被按下，当前序列可能是正确的、不完整、或者错误的。
+
+如果是正确的，那么门会打开30秒（30000ms）。如果是不完整的，那么等待按下另一个按钮。如果是错误的，那么我们重来，等待新的按钮序列。
+
+使用 ``gen_fsm`` 实现的密码锁可以得到以下回调模块：
+
+.. code-block:: erlang
+
+    -module(code_lock).
+    -behaviour(gen_fsm).
+
+    -export([start_link/1]).
+    -export([button/1]).
+    -export([init/1, locked/2, open/2]).
+
+    start_link(Code) ->
+        gen_fsm:start_link({local, code_lock}, code_lock, Code, []).
+
+    button(Digit) ->
+        gen_fsm:send_event(code_lock, {button, Digit}).
+
+    init(Code) ->
+        {ok, locked, {[], Code}}.
+
+    locked({button, Digit}, {SoFar, Code}) ->
+        case [Digit|SoFar] of
+            Code ->
+                do_unlock(),
+                {next_state, open, {[], Code}, 3000};
+            Incomplete when length(Incomplete)<length(Code) ->
+                {next_state, locked, {Incomplete, Code}};
+            _Wrong ->
+                {next_state, locked, {[], Code}}
+        end.
+
+    open(timeout, State) ->
+        do_lock(),
+        {next_state, locked, State}.
+
+该代码将会在下一节中进行解释。
+
+启动一个Gen_Fsm
+---------------
+
+在上一节的例子中，该gen_fsm是通过调用 ``code_lock:start_link(Code)`` 来启动的：
+
+.. code-block:: erlang
+
+    start_link(Code) ->
+        gen_fsm:start_link({local, code_lock}, code_lock, Code, []).
+
+``start_link`` 调用函数 ``gen_fsm:start_link/4``\ 。该函数产生并连接到一个新的gen_fsm进程.
+
+* 第一个参数 ``{local, code_lock}`` 指明了名字。在这里，gen_fsm会在本地注册为 ``code_lock`` 。
+  如果名字被省略了，那么将不会注册gen_fsm。这样就必须使用它的pid。名字也可以这样写 ``{global, Name}``, 这样，gen_fsm就是使用 ``global_register_name/2`` 来注册了。
+* 第二个参数 ``code_lock`` 是回调模块的名字，也就是回调函数所位于的模块。
+  在这个例子里面，接口函数(``start_link`` 和 ``button``)是位于和回调函数(``init``, ``locked`` 和 ``open``)相同的模块中。这一般是较好的编程实践，让一个进程对应的代码包含在一个模块里面。
+* 第三个参数 ``Code`` 是一个值，将被原封不动传递给回调函数 ``init`` 。这里， ``init`` 得到锁的正确代码做为内部数据。
+* 第四个参数 [] 是一个选项的列表。参见 :manpage:`gen_fsm(3)` 来找到可用的选项。
+
+如果名称注册成功，新的gen_fsm进程会调用回调函数 ``code_lock:init(Code)``\ 。这个函数要返回 ``{ok, StateName, StateData}``\ ，其中 ``StateName`` 是gen_fsm初始状态的名字。在这个例子里面是 ``locked``\ ，假设门一开始是锁着的。 ``StateData`` 是gen_fsm的内部状态。（对于gen_fsm来说，内部状态一般是指“状态数据”(state data)，以区别于状态机的状态）。在这个例子里面，状态数据（state data）是到目前为止的按钮的顺序（开始的时候为空）和锁的正确密码顺序。
+
+.. code-block:: erlang
+
+    init( Code ) ->
+        {ok, locked, {[], Code}}.
+
+注意\ ``gen_fsm:start_link``\ 是同步的。它只有到gen_fsm已经完成初始化并且可以接收通知的时候才返回。
+
+如果gen_fsm是一个监毒树的一部分的话——即由督程启动的——必须使用 ``gen_fsm:start_link`` 。有另外一个函数 ``gen_fsm:start`` 来启动一个独立的gen_fsm——即，gen_fsm不属于监督树的一部分。
+
+事件通知
+--------
+
+通知密码锁一个按钮被按下的事件是使用 ``gen_fsm:send_event/2`` 来实现的：
+
+.. code-block:: erlang
+
+    button(Digit) ->
+        gen_fsm:send_event(code_lock, {button, Digit}).
+
+``code_lock`` 是gen_fsm的名字并且必须与启动时候所使用的名字一致。\ ``{button，Digit}``\ 是实际的事件。
+
+事件被做为消息发送给gen_fsm。当gen_fsm收到这个事件的时候，就会调用StateName( Event, StateData )，该函数需要返回一个元组{ next_state, StateName1, StateData1}. StateName是当前状态的名字，而StateName1是要转到的下一个状态的名字。StateData1是gen_fsm的状态数据的新的值。
+
+.. code-block:: erlang
+
+    locked({button, Digit}, {SoFar, Code}) ->
+        case [Digit|SoFar] of
+            Code ->
+                do_unlock(),
+                {next_state, open, {[], Code}, 30000};
+            Incomplete when length(Incomplete)<length(Code) ->
+                {next_state, locked, {Incomplete, Code}};
+            _Wrong ->
+                {next_state, locked, {[], Code}};
+        end.
+
+    open(timeout, State) ->
+        do_lock(),
+        {next_state, locked, State}.
+
+如果门是锁着的，且按下了按钮，那么，到目前位置所有的按钮序列就会与密码锁正确的密码进行比较，然后根据比较的结果，要么门是解锁了gen_fsm进入打开的状态 ``open`` ，或者是仍然是处于锁着的状态 ``locked`` 。
+
+超时
+----
+
+当一个正确的按钮顺序被按下之后，门会被打开，下面的元组就会从函数 ``locked/2`` 返回：
+
+.. code-block:: erlang
+
+   {next_state, open, {[], Code}, 3000};
+
+30000 是一个以毫秒为单位的超时值。30000ms，也就是30秒后，就会发生一个超时。然后 ``StateName(timeout，StateData)`` 就会被调用。在这个例子里面，当门处于状态 ``open`` （打开）30秒后就会发生超时。然后门又会被锁上：
+
+.. code-block:: erlang
+
+    open(timeout, State) ->
+        do_lock(),
+        {next_state, locked, State}.
+       
+所有的状态事件
+--------------
+
+有时候，在gen_fsm的任何状态都有可能有事件到达。除了可以用 ``gen_fsm:send_event/2`` 发送消息，并为每一个状态函数写一个子句来处理事件之外，还可以通过 ``gen_fsm:send_all_state_event/2`` 来发送消息，并用 ``Module:handle_event/3`` 来处理。
+
+.. code-block:: erlang
+
+    -module(code_lock).
+    ...
+    -export([stop/0]).
+    ...
+
+    stop() ->
+        gen_fsm:send_all_state_event(code_lock, stop).
+
+    ...
+
+    handle_event(stop, _StateName, StateData) ->
+        {stop, normal, StateData}.
+       
+
+停止
+----
+
+在监督树中
+~~~~~~~~~~
+
+如果gen_fsm是监督树的一部分，那么不需要停止函数。它的督程会自动停止它。具体如何进行是通过督程中的\ :ref:`关闭策略 <shutdown>`\ 集来定义。
+
+如果需要在终止前先进行清除操作，那么关闭策略必须是一个超时值，并且，gen_fsm必须在 ``init`` 函数里面设置成捕捉退出信号。当被要求关闭时，gen_fsm会调用回调函数 ``terminate(shutdown, StateName, StateData)``:
+
+.. code-block:: erlang
+
+    init(Args) ->
+        ...,
+        process_flag(trap_exit, true),
+        ...,
+        {ok, StateName, StateData}.
+
+    ...
+
+    terminate(shutdown, StateName, StateData) ->
+        ..code for cleaning up here..
+        ok.
+       
+独立的Gen_Fsm
+~~~~~~~~~~~~~
+
+如果gen_fsm不是监督树的一部分，那么一个停止函数是有用的，例如：
+
+.. code-block:: erlang
+   
+    ...
+    -export([stop/0]).
+    ...
+
+    stop() ->
+        gen_fsm:send_all_state_event(code_lock, stop).
+    ...
+
+    handle_event(stop, _StateName, StateData) ->
+        {stop, normal, StateData}.
+
+    ...
+
+    terminate(normal, _StateName, _StateData) ->
+        ok.
+
+处理 ``stop`` 事件的回调函数返回一个元组 ``{stop，normal，StateData1}``\ ，这里的 ``normal`` 指明了这是一个正常的终止，同时 ``StateData1`` 是gen_fsm状态数据的新值。这会使gen_fsm去调用terminate(normal, StateName, StateData1 )，然后优雅的终止。
+
+处理其他消息
+~~~~~~~~~~~~
+
+如果gen_fsm需要接收事件之外的消息，那么必须实现回调函数 ``handle_info(Info, StateName, StateData)`` 来处理这些消息。其他的消息比如退出消息，如果gen_fsm是联接到其他的进程（非督程）的，并且需要捕获退出信号。
+
+.. code-block:: erlang
+
+    handle_info({’EXIT’, Pid, Reason}, StateName, StateData) ->
+        ..code to handle exits here..
+        {next_state, StateName1, StateData1}.
+
+

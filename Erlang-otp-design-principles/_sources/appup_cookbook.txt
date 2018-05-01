@@ -1,0 +1,508 @@
+.. _appup-cookbook:
+
+Appup Cookbook
+==============
+本章包含了对于典型的运行时升级／降级案例的 ``.appup`` 文件的范例。
+
+变更功能模块
+------------
+当要对一个功能模块进行变更时，例如如果添加了一个新的函数或者更正了一个错误，使用简单代码替换就足够了。
+
+例如：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{load_module, m}]}],
+     [{"1", [{load_module, m}]}]
+    }.
+
+变更驻留模块
+------------
+在依据OTP设计原理实现的系统中，所有的进程，除了系统进程和特殊进程，都属于 ``supervisor`` 、 ``gen_server`` 、 ``gen_fsm`` 或者 ``gen_event`` 行为的其中之一。它们属于STDLIB应用，如果升级或降级的一般需要模拟器重启。
+
+因此OTP不提供对驻留模块变更的支持，除了 :ref:`特殊进程 <spec>` 。
+
+更改回调模块
+------------
+回调模块是一种功能模块，对于代码扩展，只要使用简单代码替换就够了。
+
+例如：当给在 :ref:`发布处理 <release-handling>` 中的例子 ``ch3`` 添加一个函数时， ``ch_app.appup`` 应如：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{load_module, ch3}]}],
+     [{"1", [{load_module, ch3}]}]
+    }.
+
+OTP还支持更改行为进程的内部状态，参见下面的 `变更内部状态`_ 。
+
+变更内部状态
+------------
+在这种情况下，简单代码替换就不够了。进程必须在切换到新版本的回调模块之前，明确地使用回调函数 ``code_change`` 转换它的状态。这样就必须使用同步代码替换。
+
+例如：想一下来自 :ref:`gen_server行为 <gen_server>` 一章的 gen_server ``ch3`` 。内部状态是一个表示可用频道的 ``Chs`` 值。假设我们想添加一个计数器 ``N`` 用来跟踪目前的 ``alloc`` 请求数。这就表示我们需要将格式更改为 ``{Chs, N}`` 。
+
+``.appup`` 文件可以为：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{update, ch3, {advanced, []}}]}],
+     [{"1", [{update, ch3, {advanced, []}}]}]
+    }.
+
+``update`` 指令的第三个元素是一个元组 ``{advanced, Extra}`` ，它说受影响的进程要在载入新版本的模块之前进行一个状态转换。进程会调用回调函数 ``code_change`` （参见 ``gen_server(3)`` ）。 ``Extra`` ，在这里是 []， 会原样传递给该函数：
+
+.. _code_change:
+
+.. code-block:: erlang
+
+    -module(ch3).
+    ...
+    -export([code_change/3]).
+    ...
+    code_change({down, _Vsn}, {Chs, N}, _Extra) ->
+        {ok, Chs};
+    code_change(_Vsn, Chs, _Extra) ->
+        {ok, {Chs, 0}}.
+
+如果是降级，那么第一个参数是 ``{down,Vsn}`` ，如果是升级，那么则是 ``Vsn`` 。表达式 ``Vsn`` 是由模块的“原始”版本中获得的，即，由哪个版本升级来的，或者要降级到哪个版本。
+
+版本由模块属性 ``vsn`` 定义——如果有。在 ``ch3`` 中没有这种属性，这种情况下则是BEAM文件的校验和（一个大整数），这个值没什么意思所以在这里忽略掉。
+
+（ ``ch3`` 的其他回调函数也需要进行修改，可能还需要添加新的借口函数，就不在此展示了）。
+
+模块依赖性
+----------
+假设我们通过添加一个新的接口函数扩展了某个模块，如同在 :ref:`发布处理 <release-handling>` 中的例子一样，其中给 ``ch3`` 添加了一个函数 ``available/0`` 。
+
+假设如果我们还要在模块 ``m1`` 中添加一个到该函数的调用，那么如果新版本的 ``m1`` 先被载入并且在新版本的 ``ch3`` 被载入之前调用了 ``ch3:available/0`` ，那么就会发生一个运行时错误。
+
+因此，在升级的情况下， ``ch3`` 必须在 ``m1`` 之前载入；在降级的情况下则要反过来。这样，我们说 ``m1`` 是\ **依赖于**\ ``ch3`` 的。在发布处理指令中，这是通过元素 ``DepMods`` 来表达的：
+
+.. code-block:: erlang
+
+    {load_module, Module, DepMods}
+    {update, Module, {advanced, Extra}, DepMods}
+
+``DepMods`` 是 ``Module`` 所依赖的模块的列表。
+
+例如：在应用 ``myapp`` 中的 ``m1`` 模块当从“1”升级到“2”或从“2”降级到“1”时，是依赖于 ``ch3`` 的：
+
+.. code-block:: erlang
+
+    myapp.appup:
+
+    {"2",
+     [{"1", [{load_module, m1, [ch3]}]}],
+     [{"1", [{load_module, m1, [ch3]}]}]
+    }.
+
+    ch_app.appup:
+
+    {"2",
+     [{"1", [{load_module, ch3}]}],
+     [{"1", [{load_module, ch3}]}]
+    }.
+
+如果 ``m1`` 和 ``ch3`` 属于同一个应用， ``.appup`` 文件应如：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1",
+       [{load_module, ch3},
+        {load_module, m1, [ch3]}]}],
+     [{"1",
+       [{load_module, ch3},
+        {load_module, m1, [ch3]}]}]
+    }.
+
+注意，当降级的时候，还是 ``m1`` 依赖于 ``ch3`` 。 ``systools`` 知道升级和降级之间的区别并生成正确的 ``relup`` ，其中当升级的时候 ``ch3`` 会在 ``m1`` 之前加载，而当降级的时候 ``m1`` 会在 ``ch3`` 之前加载。
+
+.. _spec:
+
+变更特殊进程的代码
+------------------
+
+在这种情况下，简单代码替换是不够的。当特殊进程的驻留模块的新版本被加载后，进程必须对它的循环函数进行一个完全合格的调用来切换到新的代码上。这样就必须使用同步代码替换。
+
+.. note::
+
+    对于特殊进程，用户定义的驻留模块的名称必须列在子进程规格的 ``Modules`` 中，以便发布处理器能找到该进程。
+
+例如。想一下 :ref:`sys和proc_lib <sys-proc_lib>` 一章中的例子 ``ch4`` 。当通过督程启动的时候，子进程规格应如：
+
+.. code-block:: erlang
+
+    {ch4, {ch4, start_link, []},
+     permanent, brutal_kill, worker, [ch4]}
+
+如果 ``ch4`` 是应用 ``sp_app`` 中的一部分，并且当该应用从版本“1”升级到“2”的时候，要载入 ``ch4`` 的一个新版本，则 ``sp_app.appup`` 应如：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{update, ch4, {advanced, []}}]}],
+     [{"1", [{update, ch4, {advanced, []}}]}]
+    }.
+
+
+``update`` 指令必须包含元组 ``{advanced,Extra}`` 。该指令将让特殊进程调用回调函数 ``system_code_change/4`` ，用户必须实现该函数。表达式 ``Extra`` ，在这里是 []，会被原样传递给 ``system_code_change/4`` ：
+
+.. code-block:: erlang
+
+
+    -module(ch4).
+    ...
+    -export([system_code_change/4]).
+    ...
+
+    system_code_change(Chs, _Module, _OldVsn, _Extra) ->
+        {ok, Chs}.
+
+第一个参数是内部状态 ``State`` ，来自函数 ``sys:handle_system_msg(Request, From, Parent, Module, Deb, State)`` ，当特殊进程接受到一个系统消息的时候由特殊进程调用该函数。在 ``ch4`` 中，内部状态是可用频道的集合 ``Chs`` 。
+
+第二个参数是模块的名字（ ``ch4`` ）。
+
+第三个参数是 ``Vsn`` 或者 ``{down,Vsn}`` ，和 :ref:`gen_server:code_change/3 <code_change>` 中描述的一样。
+
+在这里，所有参数除了第一个外都被忽略了，同时函数仅仅直接返回内部状态。如果代码只是被扩展了下，那么这样就够了。如果我们还想更改内部状态（类似于在 `变更内部状态`_ 中的例子），就可以在这个函数中进行，并返回 ``{ok,Chs2}`` 。
+
+变更督程
+--------
+督程行为支持更改内部状态，即，更改重启策略和最大重启频率属性，以及更改现存的子进程规格。
+
+还可以添加和删除子进程，但这不是自动处理的。指令必须在 ``.appup`` 文件中给出。
+
+变更属性
+~~~~~~~~
+由于督程需要更改它的内部状态，所以必须使用同步代码替换。不过，必须使用特殊的 ``update`` 指令。
+
+无论在升级还是降级的情况下，新版本的回调模块必须先加载。然后可以检查 ``init/1`` 的新返回值并相应改变内部状态。
+
+对于督程要使用以下 ``upgrade`` 指令：
+
+.. code-block:: erlang
+
+    {update, Module, supervisor}
+
+例如：假设我们想将 :ref:`Supervisor行为 <supervisor>` 一章中的 ``ch_sup`` 的重启策略从 ``one_for_one`` 更改成 ``one_for_all`` 。我们要修改 ``ch_sup.erl`` 中的回调函数 ``init/1`` ：
+
+.. code-block:: erlang
+
+    -module(ch_sup).
+    ...
+
+    init(_Args) ->
+        {ok, {{one_for_all, 1, 60}, ...}}.
+
+文件 ``ch_app.appup`` ：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{update, ch_sup, supervisor}]}],
+     [{"1", [{update, ch_sup, supervisor}]}]
+    }.
+
+变更子进程规格
+~~~~~~~~~~~~~~
+当更改一个现存的子进程规格时，指令——包括 ``.appup`` 文件——和上述的变更属性是一样的：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{update, ch_sup, supervisor}]}],
+     [{"1", [{update, ch_sup, supervisor}]}]
+    }.
+
+更改不会影响现有的子进程。例如，更改了启动函数只会指定以后如果需要重启，那么子进程应该如何重启。
+
+注意，子进程规格的id不可以被更改。
+
+还要注意更改子进程规格的 ``Modules`` 字段可能会影响到发布处理过程自身，因为该字段用于在同步代码替换中识别哪些进程会受到影响。
+
+.. _sup_add:
+
+添加和删除子进程
+~~~~~~~~~~~~~~~~
+前面说过，变更子进程规格不会影响现存的子进程。新的子进程规格会被自动加入但不会被删除。并且，子进程不会自动启动或者终止，所以，必须明确使用 ``apply`` 指令。
+
+例如：假设当 ``ch_app`` 从“1”升级到“2”时，我们想要给 ``ch_sup`` 添加一个新的子进程 ``m1`` 。这也意味着如果从“2”降级到“1”的时候， ``m1`` 要被删除。
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1",
+       [{update, ch_sup, supervisor},
+        {apply, {supervisor, restart_child, [ch_sup, m1]}}
+       ]}],
+     [{"1",
+       [{apply, {supervisor, terminate_child, [ch_sup, m1]}},
+        {apply, {supervisor, delete_child, [ch_sup, m1]}},
+        {update, ch_sup, supervisor}
+       ]}]
+    }.
+
+注意指令的顺序非常重要。
+
+还要注意督程必须注册为 ``ch_sup`` 该脚本才能正常运行。如果督程没有被注册，那它就不能直接从脚本中访问。这就必须写一个帮助函数用来找到督程的pid并调用 ``supervisor:restart_child`` 等，而且必须使用 ``apply`` 指令在脚本中调用该函数。
+
+如果在 ``ch_app`` 的版本“2”中，引入了模块 ``m1`` ，那么它也必须在升级时被加载，在降级时被删除：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1",
+       [{add_module, m1},
+        {update, ch_sup, supervisor},
+        {apply, {supervisor, restart_child, [ch_sup, m1]}}
+       ]}],
+     [{"1",
+       [{apply, {supervisor, terminate_child, [ch_sup, m1]}},
+        {apply, {supervisor, delete_child, [ch_sup, m1]}},
+        {update, ch_sup, supervisor},
+        {delete_module, m1}
+       ]}]
+    }.
+
+再次注意指令的顺序非常重要。当升级时，在可以启动新的子进程之前，必须加载 ``m1`` 并且更改督程的子进程规格。当降级时，子进程必须在更改子进程规格和删除模块之前终止。
+
+添加或删除模块
+--------------
+例如： ``ch_app`` 中添加了一个新的功能模块 ``m`` ：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{add_module, m}]}],
+     [{"1", [{delete_module, m}]}]
+
+启动或终止进程
+--------------
+在一个按照OTP设计原理构建的系统中，任何进程都是某个督程的子进程，参见前面的 `添加和删除子进程`_ 。
+
+添加或移除应用
+--------------
+当添加或移除一个应用时，无需任何 ``.appup`` 文件。当生成 ``relup`` 时，会比较 ``.rel`` 文件并自动添加 ``add_application`` 和 ``remove_application`` 指令。
+
+重启应用
+--------
+当变更太复杂难以在不重启进程的情况下进行的，重启应用就非常有用，比如当监督层次结构发生变化时。
+
+例如：当为 ``ch_sup`` 添加一个新的子进程 ``m1`` ，如 :ref:`上面的例子 <sup_add>` 所示，不用更新督程的另一种做法是重启整个应用：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", [{restart_application, ch_app}]}],
+     [{"1", [{restart_application, ch_app}]}]
+    }.
+.. _app_spec:
+
+变更应用规格
+------------
+当安装一个发布时，应用规格会在执行 ``relup`` 脚本之前自动更新。因此，在 ``.appup`` 文件中无需任何指令：
+
+.. code-block:: erlang
+
+    {"2",
+     [{"1", []}],
+     [{"1", []}]
+    }.
+
+变更应用配置
+------------
+通过更新 ``.app`` 文件中的 ``env`` 键来更改应用配置其实是变更应用规格的一个特例，见 :ref:`上节 <app_spec>` 。
+
+或者，可以在 ``sys.config`` 文件中添加或更改应用配置参数。
+
+变更被包含的应用
+----------------
+添加、删除、重启应用的发布处理指令只能作用于主应用。没有针对被包含的应用的相应指令。不过，由于一个被包含的应用其实就是一个有最高督程的监督树，并作为进行包含的应用中的某个督程的子进程被启动的，所以可以手工创建一个 ``relup`` 文件。
+
+例如：假设我们有一个发布包含一个应用 ``prim_app`` ，它的监督树里有一个督程 ``prim_sup`` 。
+
+在发布的新版本中，我们的范例应用 ``ch_app`` 要被包含在 ``prim_app`` 中。也就是说，它的最高督程要被作为 ``prim_sup`` 的子进程来启动。
+
+1. 编辑 ``prim_sup`` 的代码：
+
+.. code-block:: erlang
+
+    init(...) ->
+        {ok, {...supervisor flags...,
+              [...,
+               {ch_sup, {ch_sup,start_link,[]},
+                permanent,infinity,supervisor,[ch_sup]},
+               ...]}}.
+
+2. 编辑 ``prim_app`` 的 ``.app`` 文件：
+
+.. code-block:: erlang
+
+    {application, prim_app,
+     [...,
+      {vsn, "2"},
+      ...,
+      {included_applications, [ch_app]},
+      ...
+     ]}.
+
+3. 创建一个新的 ``.rel`` 文件，包含 ``ch_app`` ：
+
+.. code-block:: erlang
+
+    {release,
+     ...,
+     [...,
+      {prim_app, "2"},
+      {ch_app, "1"}]}.
+
+应用重启
+~~~~~~~~
+4.a. 一种启动被包含的应用的方式是重启整个 ``prim_app`` 应用。一般而言，我们要在 ``prim_app`` 的 ``.appup`` 文件中使用 ``restart_application`` 指令。
+
+但是，如果我们这么做并生成了 ``relup`` 文件，它不光会包含重启（即移除再添加） ``prim_app`` ，它还会包含启动 ``ch_app`` （在降级的情况下是停止）。这是由于 ``ch_app`` 也被包含在了新的 ``.rel`` 文件中，而旧的里面没有。
+
+所以，正确的 ``relup`` 文件要被手工创建，要么重头写要么编辑生成好的版本。启动/停止 ``ch_app`` 的指令被替换成了加载/卸载应用的指令：
+
+.. code-block:: erlang
+
+    {"B",
+     [{"A",
+       [],
+       [{load_object_code,{ch_app,"1",[ch_sup,ch3]}},
+        {load_object_code,{prim_app,"2",[prim_app,prim_sup]}},
+        point_of_no_return,
+        {apply,{application,stop,[prim_app]}},
+        {remove,{prim_app,brutal_purge,brutal_purge}},
+        {remove,{prim_sup,brutal_purge,brutal_purge}},
+        {purge,[prim_app,prim_sup]},
+        {load,{prim_app,brutal_purge,brutal_purge}},
+        {load,{prim_sup,brutal_purge,brutal_purge}},
+        {load,{ch_sup,brutal_purge,brutal_purge}},
+        {load,{ch3,brutal_purge,brutal_purge}},
+        {apply,{application,load,[ch_app]}},
+        {apply,{application,start,[prim_app,permanent]}}]}],
+     [{"A",
+       [],
+       [{load_object_code,{prim_app,"1",[prim_app,prim_sup]}},
+        point_of_no_return,
+        {apply,{application,stop,[prim_app]}},
+        {apply,{application,unload,[ch_app]}},
+        {remove,{ch_sup,brutal_purge,brutal_purge}},
+        {remove,{ch3,brutal_purge,brutal_purge}},
+        {purge,[ch_sup,ch3]},
+        {remove,{prim_app,brutal_purge,brutal_purge}},
+        {remove,{prim_sup,brutal_purge,brutal_purge}},
+        {purge,[prim_app,prim_sup]},
+        {load,{prim_app,brutal_purge,brutal_purge}},
+        {load,{prim_sup,brutal_purge,brutal_purge}},
+        {apply,{application,start,[prim_app,permanent]}}]}]
+    }.
+
+
+督程变更
+~~~~~~~~
+4.b. 另一种方法是通过组合给 ``prim_sup`` 添加和删除子进程的指令和加载/卸载所有 ``ch_app`` 代码和应用规格的指令，来启动应用（在降级的情况下是停止）。
+
+这次还是要手工创建 ``relup`` 文件。你重头写或者编辑生成的版本都可以。首先，在更新 ``prim_sup`` 之前，载入 ``ch_app`` 的所有代码并加载应用规格。当降级时， ``prim_sup`` 应该先被更新，在 ``ch_app`` 的代码和应用规格卸载之前。
+
+.. code-block:: erlang
+
+    {"B",
+     [{"A",
+       [],
+       [{load_object_code,{ch_app,"1",[ch_sup,ch3]}},
+        {load_object_code,{prim_app,"2",[prim_sup]}},
+        point_of_no_return,
+        {load,{ch_sup,brutal_purge,brutal_purge}},
+        {load,{ch3,brutal_purge,brutal_purge}},
+        {apply,{application,load,[ch_app]}},
+        {suspend,[prim_sup]},
+        {load,{prim_sup,brutal_purge,brutal_purge}},
+        {code_change,up,[{prim_sup,[]}]},
+        {resume,[prim_sup]},
+        {apply,{supervisor,restart_child,[prim_sup,ch_sup]}}]}],
+     [{"A",
+       [],
+       [{load_object_code,{prim_app,"1",[prim_sup]}},
+        point_of_no_return,
+        {apply,{supervisor,terminate_child,[prim_sup,ch_sup]}},
+        {apply,{supervisor,delete_child,[prim_sup,ch_sup]}},
+        {suspend,[prim_sup]},
+        {load,{prim_sup,brutal_purge,brutal_purge}},
+        {code_change,down,[{prim_sup,[]}]},
+        {resume,[prim_sup]},
+        {remove,{ch_sup,brutal_purge,brutal_purge}},
+        {remove,{ch3,brutal_purge,brutal_purge}},
+        {purge,[ch_sup,ch3]},
+        {apply,{application,unload,[ch_app]}}]}]
+    }.
+
+变更非Erlang代码
+----------------
+变更用Erlang之外的编程语言所写的程序的代码，比如一个端口程序，是和应用紧密相关的，OTP没有为此提供特别的支持。
+
+例如，更改端口程序的代码：假设控制该port的Erlang进程是一个 gen_server ``portc`` 同时该端口是在回调函数 ``init/1`` 中打开的：
+
+.. code-block:: erlang
+
+    init(...) ->
+        ...,
+        PortPrg = filename:join(code:priv_dir(App), "portc"),
+        Port = open_port({spawn,PortPrg}, [...]),
+        ...,
+        {ok, #state{port=Port, ...}}.
+
+如果要更新端口程序，那么我们可以扩展gen_server的代码，加入一个关闭旧端口并打开新端口。（如果必要的话，gen_server可以先从端口程序请求需要保存的数据，然后将这些数据传送到新的端口中）：
+
+.. code-block:: erlang
+
+    code_change(_OldVsn, State, port) ->
+        State#state.port ! close,
+        receive
+            {Port,close} ->
+                true
+        end,
+        PortPrg = filename:join(code:priv_dir(App), "portc"),
+        Port = open_port({spawn,PortPrg}, [...]),
+        {ok, #state{port=Port, ...}}.
+
+在 ``.app`` 文件中更新应用版本并编写一个 ``.appup`` 文件：
+
+.. code-block:: erlang
+
+    ["2",
+     [{"1", [{update, portc, {advanced,port}}]}],
+     [{"1", [{update, portc, {advanced,port}}]}]
+    ].
+
+确保C程序所在的 ``priv`` 目录也被包含在了新的发布包中：
+
+::
+
+    1> systools:make_tar("my_release", [{dirs,[priv]}]).
+    ...
+
+模拟器重启
+----------
+如果模拟器需要被重启，只要手工创建一个非常简单的 ``.relup`` 文件：
+
+.. code-block:: erlang
+
+    {"B",
+     [{"A",
+       [],
+       [restart_new_emulator]}],
+     [{"A",
+       [],
+       [restart_new_emulator]}]
+    }.
+
+这样，就可以使用自带自动打包、解包、自动路径更新等等的发布处理器框架而无需指定 ``.appup`` 文件。
+
+如果在安装新的发布版之前，要进程某些持久数据的转换——比如数据库内容，其指令可以直接添加到该 ``.relup`` 文件中。
